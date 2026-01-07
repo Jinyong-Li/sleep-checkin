@@ -12,8 +12,6 @@ assignees: ''
 
 - `/sleep` - 记录当前时间为入睡时间
 - `/wake` - 记录当前时间为起床时间
-- `/sleep HH:MM` - 记录今天指定时间为入睡时间
-- `/wake HH:MM` - 记录今天指定时间为起床时间
 - `/sleep YYYY-MM-DD HH:MM backfill` - 补记历史（仅最近7天，且只能改更晚）
 - `/wake YYYY-MM-DD HH:MM backfill` - 补记历史（仅最近7天，且只能改更晚）
 
