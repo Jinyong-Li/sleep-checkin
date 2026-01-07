@@ -1,0 +1,366 @@
+name: Sleep check-in
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: sleep-checkin-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  log:
+    if: ${{ github.event.issue.pull_request == null }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Handle /sleep and /wake
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // ----------------------------
+            // Config
+            // ----------------------------
+            const REQUIRED_LABEL = 'sleep-log';
+
+            const BACKFILL_LABEL = 'backfill';
+            const BACKFILL_KEYWORD = 'backfill';
+            const BACKFILL_MAX_DAYS = 7;
+
+            // 04:00 (UTC+8): sleep before this hour counts as "previous night" (dateKey - 1 day)
+            const CUTOFF_HOUR = 4;
+
+            // ----------------------------
+            // Helpers
+            // ----------------------------
+            const pad = (n) => String(n).padStart(2, '0');
+
+            function toUtc8Date(dateUtcIso) {
+              const dt = new Date(dateUtcIso); // UTC
+              return new Date(dt.getTime() + 8 * 60 * 60 * 1000); // UTC+8 wall time encoded in UTC getters
+            }
+
+            function fmtUtc8Stamp(dateObjUtc8) {
+              const yyyy = dateObjUtc8.getUTCFullYear();
+              const mm = pad(dateObjUtc8.getUTCMonth() + 1);
+              const dd = pad(dateObjUtc8.getUTCDate());
+              const HH = pad(dateObjUtc8.getUTCHours());
+              const MM = pad(dateObjUtc8.getUTCMinutes());
+              return `${yyyy}-${mm}-${dd} ${HH}:${MM}`;
+            }
+
+            function fmtUtc8DateKey(dateObjUtc8) {
+              const yyyy = dateObjUtc8.getUTCFullYear();
+              const mm = pad(dateObjUtc8.getUTCMonth() + 1);
+              const dd = pad(dateObjUtc8.getUTCDate());
+              return `${yyyy}-${mm}-${dd}`;
+            }
+
+            function addDaysToUtc8DateKey(dateKey, deltaDays) {
+              // dateKey is YYYY-MM-DD in UTC+8 wall date
+              const m = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+              if (!m) return null;
+              const [_, Y, M, D] = m;
+              // interpret as UTC+8 midnight -> UTC time = (midnight - 8h)
+              const utcMs = Date.UTC(Number(Y), Number(M) - 1, Number(D), -8, 0, 0);
+              const newUtcMs = utcMs + deltaDays * 24 * 60 * 60 * 1000;
+              const newUtc8 = new Date(newUtcMs + 8 * 60 * 60 * 1000);
+              return fmtUtc8DateKey(newUtc8);
+            }
+
+            function minutesBetweenUtc8Stamps(sleepStamp, wakeStamp) {
+              // stamps are "YYYY-MM-DD HH:MM" in UTC+8 wall time
+              const m1 = sleepStamp.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+              const m2 = wakeStamp.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+              if (!m1 || !m2) return null;
+              const [_, Y1, M1, D1, h1, mi1] = m1;
+              const [__, Y2, M2, D2, h2, mi2] = m2;
+
+              const t1 = Date.UTC(Number(Y1), Number(M1) - 1, Number(D1), Number(h1) - 8, Number(mi1));
+              const t2 = Date.UTC(Number(Y2), Number(M2) - 1, Number(D2), Number(h2) - 8, Number(mi2));
+              return Math.round((t2 - t1) / 60000);
+            }
+
+            function ensureTableBlock(issueBody) {
+              const startMark = '<!-- SLEEP_LOG_TABLE_START -->';
+              const endMark = '<!-- SLEEP_LOG_TABLE_END -->';
+
+              let body = issueBody || '';
+              if (!body.includes(startMark) || !body.includes(endMark)) {
+                body = `${body}\n\n${startMark}\n\n| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |\n|---|---|---|---|---|\n\n${endMark}\n`;
+              }
+              return { body, startMark, endMark };
+            }
+
+            function extractTable(body, startMark, endMark) {
+              const startIdx = body.indexOf(startMark);
+              const endIdx = body.indexOf(endMark);
+              const before = body.slice(0, startIdx + startMark.length);
+              const middle = body.slice(startIdx + startMark.length, endIdx);
+              const after = body.slice(endIdx);
+              return { before, middle, after };
+            }
+
+            function parseTableToMap(middle) {
+              // returns Map<dateKey, {sleep,wake,duration,source}>
+              const lines = middle.split('\n').map(l => l.trimEnd());
+              const headerIdx = lines.findIndex(l => l.startsWith('| Date |'));
+              let tableLines = [];
+              if (headerIdx >= 0) {
+                tableLines = lines.slice(headerIdx).filter(l => l.trim() !== '');
+              } else {
+                tableLines = [
+                  '| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |',
+                  '|---|---|---|---|---|'
+                ];
+              }
+
+              const rows = tableLines.slice(2);
+              const map = new Map();
+              for (const r of rows) {
+                if (!r.startsWith('|')) continue;
+                const cols = r.split('|').map(s => s.trim()).filter(Boolean);
+                // cols: [Date, Sleep, Wake, Duration, Source]
+                if (cols.length < 5) continue;
+                map.set(cols[0], { sleep: cols[1], wake: cols[2], duration: cols[3], source: cols[4] });
+              }
+              return map;
+            }
+
+            function rebuildMiddleFromMap(map) {
+              const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1)); // desc
+              const out = [
+                '| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |',
+                '|---|---|---|---|---|',
+                ...keys.map(k => {
+                  const e = map.get(k);
+                  return `| ${k} | ${e.sleep || ''} | ${e.wake || ''} | ${e.duration || ''} | ${e.source || ''} |`;
+                })
+              ];
+              return '\n\n' + out.join('\n') + '\n\n';
+            }
+
+            function computeDuration(entry) {
+              entry.duration = entry.duration || '';
+              if (entry.sleep && entry.wake) {
+                const diffMin = minutesBetweenUtc8Stamps(entry.sleep, entry.wake);
+                if (diffMin != null && diffMin >= 0 && diffMin <= 24 * 60) {
+                  const h = Math.floor(diffMin / 60);
+                  const m = diffMin % 60;
+                  entry.duration = `${h}h${pad(m)}m`;
+                }
+              }
+            }
+
+            function dateKeyForSleepEvent(utc8DateObj) {
+              // If sleep occurs before cutoff hour, count it as previous day
+              const hour = utc8DateObj.getUTCHours();
+              const todayKey = fmtUtc8DateKey(utc8DateObj);
+              if (hour < CUTOFF_HOUR) {
+                return addDaysToUtc8DateKey(todayKey, -1);
+              }
+              return todayKey;
+            }
+
+            function parseCommand(text) {
+              // Supported:
+              // /sleep
+              // /wake
+              // /sleep HH:MM
+              // /wake HH:MM
+              // /sleep YYYY-MM-DD HH:MM backfill
+              // /wake  YYYY-MM-DD HH:MM backfill
+              const parts = (text || '').trim().split(/\s+/).filter(Boolean);
+              const cmd = (parts[0] || '').toLowerCase();
+              if (cmd !== '/sleep' && cmd !== '/wake') return null;
+
+              let explicitDate = null;
+              let explicitTime = null;
+              let isBackfill = false;
+
+              if (parts.length === 2) {
+                if (/^\d{2}:\d{2}$/.test(parts[1])) {
+                  explicitTime = parts[1];
+                }
+              } else if (parts.length >= 3) {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(parts[1]) && /^\d{2}:\d{2}$/.test(parts[2])) {
+                  explicitDate = parts[1];
+                  explicitTime = parts[2];
+                  isBackfill = parts.slice(3).map(s => s.toLowerCase()).includes(BACKFILL_KEYWORD);
+                }
+              }
+
+              return { cmd, explicitDate, explicitTime, isBackfill };
+            }
+
+            async function comment(owner, repo, issue_number, body) {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+            // Strategy B core rule:
+            // - If already has value: only allow update when new >= old (never earlier)
+            // - If empty and not backfill: new must be >= eventStamp (can't set earlier than "now")
+            function canSetField(oldStamp, newFullStamp, isBackfill, eventStamp) {
+              if (oldStamp) return newFullStamp >= oldStamp;
+              if (!isBackfill) return newFullStamp >= eventStamp;
+              return true;
+            }
+
+            // ----------------------------
+            // Start
+            // ----------------------------
+            const parsed = parseCommand(context.payload.comment.body);
+            if (!parsed) return;
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.payload.issue.number;
+
+            // Read issue
+            const issueRes = await github.rest.issues.get({ owner, repo, issue_number });
+            const issue = issueRes.data;
+
+            // Must have required label
+            const labels = (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name)).filter(Boolean);
+            if (!labels.includes(REQUIRED_LABEL)) return;
+
+            // Only allow issue author
+            const commenter = context.payload.comment.user.login;
+            const issueAuthor = issue.user?.login;
+            if (!issueAuthor || commenter !== issueAuthor) return;
+
+            // Event time (UTC+8)
+            const eventUtc8 = toUtc8Date(context.payload.comment.created_at);
+            const eventStamp = fmtUtc8Stamp(eventUtc8);
+            const eventDateKey = fmtUtc8DateKey(eventUtc8);
+
+            // Determine base table
+            const { body: ensuredBody, startMark, endMark } = ensureTableBlock(issue.body || '');
+            const { before, middle, after } = extractTable(ensuredBody, startMark, endMark);
+            const map = parseTableToMap(middle);
+
+            // Find latest incomplete sleep row (Sleep set, Wake empty), newest date first
+            const findLatestIncompleteDateKey = () => {
+              const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
+              for (const k of keys) {
+                const e = map.get(k);
+                if (e && e.sleep && !e.wake) return k;
+              }
+              return null;
+            };
+
+            // Resolve target
+            let appliedDateKey = null;
+            let targetStamp = null; // always full "YYYY-MM-DD HH:MM" in UTC+8
+            let source = 'live';
+
+            if (!parsed.explicitTime) {
+              // /sleep or /wake
+              if (parsed.cmd === '/sleep') {
+                appliedDateKey = dateKeyForSleepEvent(eventUtc8);
+                targetStamp = eventStamp; // real time
+              } else {
+                // /wake: prefer incomplete row; stamp = real time
+                appliedDateKey = findLatestIncompleteDateKey() || eventDateKey;
+                targetStamp = eventStamp; // KEEP REAL DATE (important!)
+              }
+            } else if (parsed.explicitTime && !parsed.explicitDate) {
+              // /sleep HH:MM or /wake HH:MM (no date)
+              if (parsed.cmd === '/sleep') {
+                appliedDateKey = dateKeyForSleepEvent(eventUtc8);
+                targetStamp = `${appliedDateKey} ${parsed.explicitTime}`; // dateKey is the "sleep night" date
+              } else {
+                // /wake HH:MM: prefer incomplete row, but date part should be "real wake day"
+                appliedDateKey = findLatestIncompleteDateKey() || eventDateKey;
+                const wakeRealDay = eventDateKey;
+                targetStamp = `${wakeRealDay} ${parsed.explicitTime}`;
+              }
+            } else if (parsed.explicitDate && parsed.explicitTime) {
+              // /sleep YYYY-MM-DD HH:MM backfill
+              // /wake  YYYY-MM-DD HH:MM backfill
+              if (!parsed.isBackfill) return;
+
+              appliedDateKey = parsed.explicitDate;
+              targetStamp = `${parsed.explicitDate} ${parsed.explicitTime}`;
+              source = 'backfill';
+
+              // Enforce 7-day window (inclusive)
+              const todayKey = eventDateKey;
+              const minAllowed = addDaysToUtc8DateKey(todayKey, -BACKFILL_MAX_DAYS);
+              if (minAllowed && (appliedDateKey < minAllowed || appliedDateKey > todayKey)) return;
+            }
+
+            if (!appliedDateKey || !targetStamp) return;
+
+            const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source: '' };
+
+            // Enforce "only once per day" unless backfill
+            if (parsed.cmd === '/sleep' && entry.sleep && source !== 'backfill') {
+              await comment(owner, repo, issue_number,
+                `@${commenter} ${appliedDateKey} 已经记录过 **Sleep**：**${entry.sleep}**。\n` +
+                `如需修正，请使用：\n` +
+                `\`/sleep ${appliedDateKey} HH:MM backfill\`\n` +
+                `（仅允许最近 ${BACKFILL_MAX_DAYS} 天，且只能把时间改得更晚）`
+              );
+              return;
+            }
+            if (parsed.cmd === '/wake' && entry.wake && source !== 'backfill') {
+              await comment(owner, repo, issue_number,
+                `@${commenter} ${appliedDateKey} 已经记录过 **Wake**：**${entry.wake}**。\n` +
+                `如需修正，请使用：\n` +
+                `\`/wake ${appliedDateKey} HH:MM backfill\`\n` +
+                `（仅允许最近 ${BACKFILL_MAX_DAYS} 天，且只能把时间改得更晚）`
+              );
+              return;
+            }
+
+            // Strategy B: never earlier
+            if (parsed.cmd === '/sleep') {
+              if (!canSetField(entry.sleep, targetStamp, source === 'backfill', eventStamp)) {
+                await comment(owner, repo, issue_number,
+                  `@${commenter} 不允许把 **Sleep** 改得更早。\n当前：**${entry.sleep || '(empty)'}**\n尝试：**${targetStamp}**`
+                );
+                return;
+              }
+              entry.sleep = targetStamp;
+            } else {
+              if (!canSetField(entry.wake, targetStamp, source === 'backfill', eventStamp)) {
+                await comment(owner, repo, issue_number,
+                  `@${commenter} 不允许把 **Wake** 改得更早。\n当前：**${entry.wake || '(empty)'}**\n尝试：**${targetStamp}**`
+                );
+                return;
+              }
+              entry.wake = targetStamp;
+            }
+
+            // Source: if any backfill ever touched this row, keep backfill
+            if (entry.source !== 'backfill') {
+              entry.source = source;
+            }
+
+            computeDuration(entry);
+            map.set(appliedDateKey, entry);
+
+            // Update issue body
+            const rebuiltMiddle = rebuildMiddleFromMap(map);
+            const finalBody = before + rebuiltMiddle + after;
+            await github.rest.issues.update({
+              owner, repo, issue_number,
+              body: finalBody
+            });
+
+            // Add BACKFILL_LABEL on issue if any backfill happened (best-effort)
+            if (source === 'backfill') {
+              const newLabels = Array.from(new Set([...(labels || []), BACKFILL_LABEL]));
+              await github.rest.issues.update({
+                owner, repo, issue_number,
+                labels: newLabels
+              });
+            }
+
+            // Receipt comment
+            const action = parsed.cmd === '/sleep' ? 'Sleep' : 'Wake';
+            const extra = source === 'backfill' ? ' (backfill)' : '';
+            await comment(owner, repo, issue_number, `Recorded **${action}**${extra}: **${targetStamp} (UTC+8)**`);
