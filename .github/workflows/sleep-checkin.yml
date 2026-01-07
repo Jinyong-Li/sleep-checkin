@@ -254,12 +254,38 @@ jobs:
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number });
             const issue = issueRes.data;
 
-            // Must have required label
-            const labels = (issue.labels || [])
+            // Must have required label (or auto-add it)
+            let labels = (issue.labels || [])
               .map((l) => (typeof l === 'string' ? l : l.name))
               .filter(Boolean);
-
-            if (!labels.includes(REQUIRED_LABEL)) return;
+            
+            if (!labels.includes(REQUIRED_LABEL)) {
+              // Check if issue body has the enable marker
+              const issueBody = issue.body || '';
+              const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
+            
+              // Only allow issue author to auto-enable
+              const commenter = context.payload.comment.user.login;
+              const issueAuthor = issue.user?. login;
+            
+              if (hasMarker && issueAuthor && commenter === issueAuthor) {
+                // Auto-add label
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number,
+                  labels: [REQUIRED_LABEL],
+                });
+                labels.push(REQUIRED_LABEL); // update local array
+                
+                await comment(owner, repo, issue_number, 
+                  `@${commenter} ✅ 已自动启用 sleep-log 功能。`
+                );
+              } else {
+                // Not enabled, ignore
+                return;
+              }
+            }
 
             // Only allow issue author
             const commenter = context.payload.comment.user.login;
