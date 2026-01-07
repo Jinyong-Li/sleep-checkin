@@ -1,6 +1,6 @@
 # sleep-checkin
 
-用 GitHub Issues + GitHub Actions 记录睡觉/起床时间，并自动生成汇总面板：[`docs/dashboard.md`](docs/dashboard.md)。
+用 GitHub Issues + GitHub Actions 记录睡觉/起床时间。
 
 ---
 
@@ -57,12 +57,6 @@
 - `/wake` 会优先填入“最近一次 sleep 已记录但 wake 为空”的那一行（保证“一次睡眠一行”）
 - **wake 记录为真实日期时间**（避免跨天时长计算出错）
 - 同一天的 Sleep/Wake 各只允许记录一次；如果是刚刚误操作，优先用 /undo（10 分钟内），否则用 backfill 修正。
-
----
-
-## Dashboard
-> [!NOTE]
-> Dashboard 从 `github-actions[bot]` 的事件日志统计（防篡改），支持 `/undo`（撤销事件不会被统计）。
 
 Dashboard 会定时扫描所有带 `sleep-log` 标签且处于 open 的 Issue，生成：
 - 今天（按 sleep dateKey）的所有人记录
