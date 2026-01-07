@@ -6,6 +6,41 @@
 
 ---
 
+## PWA 快速入口（推荐）
+如果你不想每次都进 GitHub Issues 手动找 issue，可以直接使用这个网页 App（支持“添加到主屏幕/桌面”，体验接近原生 App）：
+
+- **Sleep Check-in App（GitHub Pages）**：https://jinyong-li.github.io/sleep-checkin/
+
+首次使用流程：
+1. 打开上面的链接，点击 **Login with GitHub**
+2. 如果你还没有 Sleep Log Issue，页面会提供 **Create Issue** 按钮一键创建（并自动 `/rebuild` 启用）
+3. 之后即可在 App 里一键发送 `/sleep` `/wake` `/undo` `/archive` `/rebuild` 以及 backfill 命令，并查看最新评论与表格
+
+> 如果你更换了 Worker 地址（维护者才会遇到），可在页面的「高级设置」里查看当前 Worker Base URL（由 `docs/config.js` 配置）。
+
+---
+
+## 安装到主屏幕/桌面（把网页变成“App”）
+### iPhone / iPad（Safari）
+1. 用 Safari 打开：https://jinyong-li.github.io/sleep-checkin/
+2. 点击底部 **分享**按钮
+3. 选择 **添加到主屏幕**
+4. 添加后从桌面图标打开即可（App 模式）
+
+> iOS 必须用 Safari 才能“添加到主屏幕”。
+
+### Android（Chrome）
+1. 用 Chrome 打开：https://jinyong-li.github.io/sleep-checkin/
+2. 右上角菜单 → **安装应用 / Install app**（或“添加到主屏幕”）
+3. 安装后从桌面图标打开即可
+
+### Windows / macOS（Chrome / Edge）
+1. 打开：https://jinyong-li.github.io/sleep-checkin/
+2. 地址栏右侧出现 **安装**图标（Install）
+3. 点击安装后会以独立窗口运行（桌面 App）
+
+---
+
 ## 工作方式（重要）
 - 每个人使用 **一个固定 Issue** 作为自己的睡眠日志
 - 在自己的 Issue 下评论命令：`/sleep`、`/wake`（以及 backfill、`/rebuild`、`/undo`）
@@ -24,6 +59,14 @@
 ---
 
 ## 开始使用
+你可以任选一种方式：
+
+### 方式 A：使用 App（推荐）
+1. 打开：https://jinyong-li.github.io/sleep-checkin/
+2. 登录后如果没有日志 Issue，点击 **Create Issue** 一键创建
+3. 在 App 里点击按钮打卡/回看结果
+
+### 方式 B：纯 GitHub Issue
 1. 在仓库 **Issues** 使用模板创建你的 Sleep Log Issue（模板内含启用标记）
 2. 在该 Issue 下评论命令开始打卡（首次会自动启用并添加 `sleep-log` 标签）
 
@@ -53,6 +96,7 @@
   - 机器人会先从事件日志重建一次，确保数据最新
   - 然后把标题改为：`[Sleep Log] @user (start ~ end) [archived]`
   - 最后关闭 issue；你可以再新建一个新的 Sleep Log issue 继续记录
+
 ---
 
 ## 规则（时间归属与匹配）
