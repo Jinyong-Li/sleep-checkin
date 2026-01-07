@@ -16,7 +16,7 @@ jobs:
     if: ${{ github.event.issue.pull_request == null }}
     runs-on: ubuntu-latest
     steps:
-      - name: Handle /sleep /wake /rebuild /undo
+      - name: Handle /sleep /wake /rebuild /undo /archive
         uses: actions/github-script@v7
         with:
           script: |
@@ -31,6 +31,10 @@ jobs:
             const UNDO_MAX_MINUTES = 10;
 
             const RECENT_DAYS = 30;
+
+            // archive hint threshold (trusted event comments only)
+            const ARCHIVE_SUGGEST_THRESHOLD = 1500;
+            const ARCHIVE_HINT_MARKER = '<!-- SLEEP_LOG_ARCHIVE_HINTED -->';
 
             // 04:00 (UTC+8): sleep before this hour counts as "previous night" (dateKey - 1 day)
             const CUTOFF_HOUR = 4;
@@ -155,8 +159,8 @@ jobs:
               return entry;
             }
 
-            function sortedDateKeysDesc(objKeys) {
-              return [...objKeys].sort((a, b) => (a < b ? 1 : -1));
+            function sortedDateKeysDesc(keys) {
+              return [...keys].sort((a, b) => (a < b ? 1 : -1));
             }
 
             function buildRowsObjectToMap(rowsObj) {
@@ -251,6 +255,11 @@ jobs:
               return (body || '').slice(0, start) + marker + (body || '').slice(end + STATE_SUFFIX.length);
             }
 
+            function upsertArchiveHintMarker(body) {
+              if ((body || '').includes(ARCHIVE_HINT_MARKER)) return body || '';
+              return `${body || ''}\n\n${ARCHIVE_HINT_MARKER}\n`;
+            }
+
             // ----------------------------
             // Helpers: commands & events
             // ----------------------------
@@ -261,11 +270,13 @@ jobs:
               // /wake  YYYY-MM-DD HH:MM backfill
               // /rebuild
               // /undo
+              // /archive
               const parts = (text || '').trim().split(/\s+/).filter(Boolean);
               const cmd = (parts[0] || '').toLowerCase();
 
               if (cmd === '/rebuild') return { cmd };
               if (cmd === '/undo') return { cmd };
+              if (cmd === '/archive') return { cmd };
 
               if (cmd !== '/sleep' && cmd !== '/wake') return null;
 
@@ -407,7 +418,6 @@ jobs:
                 map.set(evt.dateKey, e);
               }
 
-              // cursor = latest trusted event comment id, or 0
               const cursor = events.length ? Math.max(...events.map((e) => e.id)) : 0;
               return { map, cursor };
             }
@@ -447,6 +457,12 @@ jobs:
               return null;
             }
 
+            function getDateRangeFromMap(map) {
+              const keys = Array.from(map.keys()).sort(); // asc
+              if (!keys.length) return null;
+              return { start: keys[0], end: keys[keys.length - 1] };
+            }
+
             // ----------------------------
             // Start
             // ----------------------------
@@ -465,10 +481,10 @@ jobs:
 
             if (!issueAuthor || commenter !== issueAuthor) return;
 
-            // Title normalize
-            const desiredTitle = `${TITLE_PREFIX} @${issueAuthor}`;
-            if (!issue.title?.includes(`@${issueAuthor}`)) {
-              await github.rest.issues.update({ owner, repo, issue_number, title: desiredTitle });
+            // Title normalize (for active log)
+            const desiredTitleActive = `${TITLE_PREFIX} @${issueAuthor}`;
+            if (!issue.title?.includes(`@${issueAuthor}`) && !issue.title?.includes('[archived]')) {
+              await github.rest.issues.update({ owner, repo, issue_number, title: desiredTitleActive });
             }
 
             // label list
@@ -526,7 +542,7 @@ jobs:
             const state = parseStateFromBody(ensured.body);
 
             // Decide mode
-            const forceFullRebuild = parsed.cmd === '/rebuild' || parsed.cmd === '/undo' || !state;
+            const forceFullRebuild = parsed.cmd === '/rebuild' || parsed.cmd === '/undo' || parsed.cmd === '/archive' || !state;
 
             // Build working map
             let map = new Map();
@@ -576,55 +592,69 @@ jobs:
               cursor = rebuilt.cursor;
 
               await writeBodyWithTableAndState(map, cursor, commentOnNoEvents && map.size === 0);
-              return { map, cursor };
-            }
 
-            function applyEventToMap(mapRef, evt) {
-              // evt: sleep|wake with stamp/dateKey/source
-              const entry = mapRef.get(evt.dateKey) || { sleep: '', wake: '', duration: '', source: '' };
-
-              if (evt.cmd === 'sleep') {
-                if (!entry.sleep || evt.stamp >= entry.sleep) entry.sleep = evt.stamp;
-              } else if (evt.cmd === 'wake') {
-                if (!entry.wake || evt.stamp >= entry.wake) entry.wake = evt.stamp;
+              // archive hint (only once)
+              if (!ensured.body.includes(ARCHIVE_HINT_MARKER) && events.length >= ARCHIVE_SUGGEST_THRESHOLD) {
+                const body3 = upsertArchiveHintMarker((await github.rest.issues.get({ owner, repo, issue_number })).data.body || '');
+                await github.rest.issues.update({ owner, repo, issue_number, body: body3 });
+                await createComment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `@${commenter} ℹ️ 该日志的可信事件评论数已达到 **${events.length}**（>= ${ARCHIVE_SUGGEST_THRESHOLD}）。\n` +
+                    `如果你想让 issue 更“轻”，可以使用 \`/archive\` 自动封存并关闭此 issue，然后新建一个新的 Sleep Log issue 继续记录。`
+                );
               }
 
-              if (entry.source !== 'backfill') entry.source = evt.source || 'live';
-              computeDuration(entry);
-              mapRef.set(evt.dateKey, entry);
+              return { map, cursor, trustedEventsCount: events.length, events };
             }
 
             // Init map/cursor either from state (fast) or full rebuild (slow)
+            let fullEvents = null;
+            let trustedEventsCount = 0;
+
             if (forceFullRebuild) {
-              await fullRebuildAndWrite({ commentOnNoEvents: true });
+              const r = await fullRebuildAndWrite({ commentOnNoEvents: true });
+              trustedEventsCount = r.trustedEventsCount;
+              fullEvents = r.events;
 
               if (parsed.cmd === '/rebuild') {
                 await createComment(owner, repo, issue_number, `@${commenter} ✅ 已从事件日志重建表格。`);
                 return;
               }
-              // For /undo we still need to continue handling below, because /undo isn't just rebuild.
-              // (We'll handle /undo by using full events list again to find the latest revocable event.)
             } else {
-              // Fast path: trust cached state rows
               cursor = state.cursor;
               map = buildRowsObjectToMap(state.rows);
-
-              // Ensure table block exists and state exists (but don't overwrite table here)
-              // We'll rewrite after successful record.
-              const ensuredBody = ensured.body;
-              if (!ensuredBody.includes(STATE_PREFIX)) {
-                const newBody = upsertStateIntoBody(ensuredBody, state);
-                if ((latestIssue.body || '') !== newBody) {
-                  await github.rest.issues.update({ owner, repo, issue_number, body: newBody });
-                }
-              }
             }
 
-            // /undo handler (always uses full rebuild/events for correctness)
-            if (parsed.cmd === '/undo') {
-              const events = await buildTrustedEventsFull(owner, repo, issue_number);
+            // /archive handler (requires sleep-log enabled, and we already did full rebuild in this branch)
+            if (parsed.cmd === '/archive') {
+              // Must be enabled (label already ensured above); still do a sanity check:
+              if (!labels.includes(REQUIRED_LABEL)) return;
 
-              // Build revoked set
+              // If no events/rows, archive without range
+              const range = getDateRangeFromMap(map);
+              const rangeText = range ? `(${range.start} ~ ${range.end}) ` : '';
+              const newTitle = `${TITLE_PREFIX} @${issueAuthor} ${rangeText}[archived]`;
+
+              await github.rest.issues.update({ owner, repo, issue_number, title: newTitle });
+
+              await createComment(
+                owner,
+                repo,
+                issue_number,
+                `@${commenter} ✅ 已封存该日志并准备关闭。\n` +
+                  `建议：使用模板新建一个新的 Sleep Log issue 继续记录（保持每人只有一个 open）。`
+              );
+
+              await github.rest.issues.update({ owner, repo, issue_number, state: 'closed' });
+              return;
+            }
+
+            // /undo handler (always uses full events for correctness)
+            if (parsed.cmd === '/undo') {
+              const events = fullEvents || (await buildTrustedEventsFull(owner, repo, issue_number));
+
               const revoked = new Set();
               for (const e of events) if (e.cmd === 'undo') revoked.add(e.revokes);
 
@@ -655,12 +685,10 @@ jobs:
                 return;
               }
 
-              // Create placeholder comment -> update with undo event (needs id)
               const placeholder = await createComment(owner, repo, issue_number, `Recording undo...`);
               const undoEvt = { id: placeholder.id, cmd: 'undo', revokes: target.id, at: eventStamp, source: 'live' };
               await updateComment(owner, repo, placeholder.id, buildEventComment(undoEvt));
 
-              // Full rebuild + write state/table
               await fullRebuildAndWrite({ commentOnNoEvents: false });
 
               await createComment(
@@ -672,11 +700,7 @@ jobs:
               return;
             }
 
-            // If we are in fast path, we can optionally apply new events since cursor to keep state in sync.
-            // But we don't strictly need to, because only bot writes events; and each command will add one new event.
-            // We keep it minimal: rely on state + this command's event.
-
-            // Resolve dateKey/stamp for /sleep /wake
+            // Normal /sleep /wake
             const findLatestIncompleteDateKey = () => {
               const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
               for (const k of keys) {
@@ -832,7 +856,6 @@ jobs:
             computeDuration(entry);
             map.set(appliedDateKey, entry);
 
-            // Record trusted event comment with stable id (placeholder then update)
             const placeholder = await createComment(owner, repo, issue_number, `Recording event...`);
             const evt = {
               id: placeholder.id,
@@ -843,8 +866,22 @@ jobs:
             };
             await updateComment(owner, repo, placeholder.id, buildEventComment(evt));
 
-            // Apply event to map already done; update cursor to include this comment id
             cursor = Math.max(cursor || 0, placeholder.id);
 
-            // Write table + state (do not keep old table)
-            await writeBodyWithTableAndState(map, cursor, false);
+            // write table + state
+            const middle = buildTableMiddle(map, eventDateKey);
+            const latest3 = await github.rest.issues.get({ owner, repo, issue_number });
+            const ensured3 = ensureTableBlock(latest3.data.body || '');
+            const { before, after } = extractTable(ensured3.body, ensured3.startMark, ensured3.endMark);
+
+            let finalBody = before + middle + after;
+            const stateObj = { cursor: cursor || 0, rows: buildMapToRowsObject(map) };
+            finalBody = upsertStateIntoBody(finalBody, stateObj);
+
+            await github.rest.issues.update({ owner, repo, issue_number, body: finalBody });
+
+            // archive hint (only once; count is full rebuild only, but we can do a lightweight check here if marker not present)
+            if (!(finalBody.includes(ARCHIVE_HINT_MARKER)) && cursor >= 1) {
+              // We don't know trusted events count in fast path without scanning.
+              // So we only hint when we already did a full rebuild earlier (marker written), or user can use /archive anytime.
+            }
