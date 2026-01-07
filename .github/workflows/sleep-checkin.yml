@@ -30,10 +30,11 @@ jobs:
 
             const UNDO_MAX_MINUTES = 10;
 
+            const RECENT_DAYS = 30;
+
             // 04:00 (UTC+8): sleep before this hour counts as "previous night" (dateKey - 1 day)
             const CUTOFF_HOUR = 4;
 
-            // Title format
             const TITLE_PREFIX = '[Sleep Log]';
 
             // Anti-tamper: only trust events emitted by github-actions[bot]
@@ -41,11 +42,14 @@ jobs:
             const EVENT_PREFIX = '<!--SLEEP_LOG_EVENT ';
             const EVENT_SUFFIX = '-->';
 
-            // One-open-issue-per-user policy
+            // Cached state marker (written to issue body by bot)
+            const STATE_PREFIX = '<!-- SLEEP_LOG_STATE ';
+            const STATE_SUFFIX = ' -->';
+
             const ENFORCE_SINGLE_OPEN_ISSUE_PER_USER = true;
 
             // ----------------------------
-            // Helpers
+            // Helpers: date/time
             // ----------------------------
             const pad = (n) => String(n).padStart(2, '0');
 
@@ -96,6 +100,16 @@ jobs:
               return Math.round((t2 - t1) / 60000);
             }
 
+            function dateKeyForSleepEvent(utc8DateObj) {
+              const hour = utc8DateObj.getUTCHours();
+              const todayKey = fmtUtc8DateKey(utc8DateObj);
+              if (hour < CUTOFF_HOUR) return addDaysToUtc8DateKey(todayKey, -1);
+              return todayKey;
+            }
+
+            // ----------------------------
+            // Helpers: table & state markers
+            // ----------------------------
             function ensureTableBlock(issueBody) {
               const startMark = '<!-- SLEEP_LOG_TABLE_START -->';
               const endMark = '<!-- SLEEP_LOG_TABLE_END -->';
@@ -104,8 +118,6 @@ jobs:
               if (!body.includes(startMark) || !body.includes(endMark)) {
                 body =
                   `${body}\n\n${startMark}\n\n` +
-                  `| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |\n` +
-                  `|---|---|---|---|---|\n\n` +
                   `${endMark}\n`;
               }
               return { body, startMark, endMark };
@@ -120,43 +132,129 @@ jobs:
               return { before, middle, after };
             }
 
-            function rebuildMiddleFromMap(map) {
-              const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1)); // desc
-              const out = [
-                '| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |',
-                '|---|---|---|---|---|',
-                ...keys.map((k) => {
-                  const e = map.get(k);
-                  return `| ${k} | ${e.sleep || ''} | ${e.wake || ''} | ${e.duration || ''} | ${e.source || ''} |`;
-                }),
-              ];
-              return `\n\n${out.join('\n')}\n\n`;
-            }
-
             function computeDuration(entry) {
               entry.duration = '';
-
               if (entry.sleep && entry.wake) {
                 const diffMin = minutesBetweenUtc8Stamps(entry.sleep, entry.wake);
                 if (diffMin != null && diffMin >= 0 && diffMin <= 24 * 60) {
                   const h = Math.floor(diffMin / 60);
                   const m = diffMin % 60;
                   entry.duration = `${h}h${pad(m)}m`;
-                } else {
-                  entry.duration = '';
                 }
               }
             }
 
-            function dateKeyForSleepEvent(utc8DateObj) {
-              const hour = utc8DateObj.getUTCHours();
-              const todayKey = fmtUtc8DateKey(utc8DateObj);
-              if (hour < CUTOFF_HOUR) return addDaysToUtc8DateKey(todayKey, -1);
-              return todayKey;
+            function normalizeEntry(e) {
+              const entry = {
+                sleep: e?.sleep || '',
+                wake: e?.wake || '',
+                duration: e?.duration || '',
+                source: e?.source || '',
+              };
+              computeDuration(entry);
+              return entry;
             }
 
+            function sortedDateKeysDesc(objKeys) {
+              return [...objKeys].sort((a, b) => (a < b ? 1 : -1));
+            }
+
+            function buildRowsObjectToMap(rowsObj) {
+              const map = new Map();
+              for (const [k, v] of Object.entries(rowsObj || {})) {
+                map.set(k, normalizeEntry(v));
+              }
+              return map;
+            }
+
+            function buildMapToRowsObject(map) {
+              const rows = {};
+              for (const [k, v] of map.entries()) {
+                rows[k] = {
+                  sleep: v.sleep || '',
+                  wake: v.wake || '',
+                  duration: v.duration || '',
+                  source: v.source || '',
+                };
+              }
+              return rows;
+            }
+
+            function buildTableMarkdownFromMap(map, keysDesc) {
+              const out = [
+                '| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |',
+                '|---|---|---|---|---|',
+              ];
+
+              for (const k of keysDesc) {
+                const e = map.get(k) || { sleep: '', wake: '', duration: '', source: '' };
+                out.push(`| ${k} | ${e.sleep || ''} | ${e.wake || ''} | ${e.duration || ''} | ${e.source || ''} |`);
+              }
+
+              return out.join('\n');
+            }
+
+            function buildTableMiddle(map, todayKey) {
+              const allKeys = sortedDateKeysDesc(Array.from(map.keys()));
+              const minRecent = addDaysToUtc8DateKey(todayKey, -(RECENT_DAYS - 1));
+              const recentKeys = allKeys.filter((k) => !minRecent || (k >= minRecent && k <= todayKey));
+
+              const recentTable = buildTableMarkdownFromMap(map, recentKeys);
+              const allTable = buildTableMarkdownFromMap(map, allKeys);
+
+              return (
+                `\n\n` +
+                `### Recent (last ${RECENT_DAYS} days)\n\n` +
+                `${recentTable}\n\n` +
+                `<details>\n` +
+                `<summary>All history</summary>\n\n` +
+                `${allTable}\n\n` +
+                `</details>\n\n`
+              );
+            }
+
+            function parseStateFromBody(body) {
+              const start = (body || '').indexOf(STATE_PREFIX);
+              if (start < 0) return null;
+              const jsonStart = start + STATE_PREFIX.length;
+              const end = (body || '').indexOf(STATE_SUFFIX, jsonStart);
+              if (end < 0) return null;
+              const jsonText = (body || '').slice(jsonStart, end).trim();
+              try {
+                const st = JSON.parse(jsonText);
+                if (!st || typeof st !== 'object') return null;
+                if (typeof st.cursor !== 'number') return null;
+                if (!st.rows || typeof st.rows !== 'object') return null;
+                return st;
+              } catch {
+                return null;
+              }
+            }
+
+            function upsertStateIntoBody(body, stateObj) {
+              const json = JSON.stringify(stateObj);
+              const marker = `${STATE_PREFIX}${json}${STATE_SUFFIX}`;
+
+              const start = (body || '').indexOf(STATE_PREFIX);
+              if (start < 0) {
+                // append at end
+                return `${body || ''}\n\n${marker}\n`;
+              }
+
+              const jsonStart = start + STATE_PREFIX.length;
+              const end = (body || '').indexOf(STATE_SUFFIX, jsonStart);
+              if (end < 0) {
+                // broken marker: remove everything after prefix and append fresh marker
+                return `${(body || '').slice(0, start).trimEnd()}\n\n${marker}\n`;
+              }
+
+              return (body || '').slice(0, start) + marker + (body || '').slice(end + STATE_SUFFIX.length);
+            }
+
+            // ----------------------------
+            // Helpers: commands & events
+            // ----------------------------
             function parseCommand(text) {
-              // Supported:
               // /sleep
               // /wake
               // /sleep YYYY-MM-DD HH:MM backfill
@@ -184,10 +282,7 @@ jobs:
                 if (/^\d{4}-\d{2}-\d{2}$/.test(parts[1]) && /^\d{2}:\d{2}$/.test(parts[2])) {
                   explicitDate = parts[1];
                   explicitTime = parts[2];
-                  isBackfill = parts
-                    .slice(3)
-                    .map((s) => s.toLowerCase())
-                    .includes(BACKFILL_KEYWORD);
+                  isBackfill = parts.slice(3).map((s) => s.toLowerCase()).includes(BACKFILL_KEYWORD);
                 }
               }
 
@@ -208,10 +303,7 @@ jobs:
                 const evt = JSON.parse(jsonText);
                 if (!evt || typeof evt !== 'object') return null;
 
-                // cmd: sleep|wake|undo
                 if (evt.cmd !== 'sleep' && evt.cmd !== 'wake' && evt.cmd !== 'undo') return null;
-
-                // id is required for all events (we will write it from comment.id)
                 if (typeof evt.id !== 'number') return null;
 
                 if (evt.cmd === 'undo') {
@@ -230,13 +322,16 @@ jobs:
               }
             }
 
-            async function comment(owner, repo, issue_number, body) {
+            async function createComment(owner, repo, issue_number, body) {
               const res = await github.rest.issues.createComment({ owner, repo, issue_number, body });
               return res.data; // includes id, created_at
             }
 
+            async function updateComment(owner, repo, comment_id, body) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id, body });
+            }
+
             function buildEventComment(evt) {
-              // evt must already contain id
               if (evt.cmd === 'undo') {
                 return (
                   `Recorded **Undo**: revoked event **${evt.revokes}**\n` +
@@ -252,50 +347,37 @@ jobs:
               );
             }
 
+            async function listCommentsPage(owner, repo, issue_number, page, per_page = 100) {
+              const res = await github.rest.issues.listComments({ owner, repo, issue_number, per_page, page });
+              return res.data || [];
+            }
+
             async function listAllComments(owner, repo, issue_number) {
               const per_page = 100;
               let page = 1;
               const all = [];
-
               while (true) {
-                const res = await github.rest.issues.listComments({
-                  owner,
-                  repo,
-                  issue_number,
-                  per_page,
-                  page,
-                });
-
-                const items = res.data || [];
+                const items = await listCommentsPage(owner, repo, issue_number, page, per_page);
                 all.push(...items);
-
                 if (items.length < per_page) break;
                 page += 1;
               }
-
               return all;
             }
 
-            async function buildTrustedEvents(owner, repo, issue_number) {
+            async function buildTrustedEventsFull(owner, repo, issue_number) {
               const comments = await listAllComments(owner, repo, issue_number);
 
-              // events are stored in trusted bot comments; we attach comment.created_at for undo window checks
               const events = [];
-
               for (const c of comments) {
                 if (c.user?.login !== TRUSTED_EVENT_AUTHOR) continue;
                 const evt = parseEventFromCommentBody(c.body || '');
                 if (!evt) continue;
-
-                // Ensure event id matches the comment id (defense-in-depth)
-                // If older events existed without id, they will be ignored by parseEventFromCommentBody.
-                if (evt.id !== c.id) continue;
-
+                if (evt.id !== c.id) continue; // defense-in-depth
                 evt._comment_created_at = c.created_at;
                 events.push(evt);
               }
 
-              // sort by comment time asc (stable rebuild)
               events.sort((a, b) => (a._comment_created_at < b._comment_created_at ? -1 : 1));
               return events;
             }
@@ -321,12 +403,13 @@ jobs:
                 }
 
                 if (e.source !== 'backfill') e.source = evt.source || 'live';
-
                 computeDuration(e);
                 map.set(evt.dateKey, e);
               }
 
-              return { map, revoked };
+              // cursor = latest trusted event comment id, or 0
+              const cursor = events.length ? Math.max(...events.map((e) => e.id)) : 0;
+              return { map, cursor };
             }
 
             function canSetField(oldStamp, newFullStamp, isBackfill, eventStamp) {
@@ -382,27 +465,23 @@ jobs:
 
             if (!issueAuthor || commenter !== issueAuthor) return;
 
+            // Title normalize
             const desiredTitle = `${TITLE_PREFIX} @${issueAuthor}`;
             if (!issue.title?.includes(`@${issueAuthor}`)) {
-              await github.rest.issues.update({
-                owner,
-                repo,
-                issue_number,
-                title: desiredTitle,
-              });
+              await github.rest.issues.update({ owner, repo, issue_number, title: desiredTitle });
             }
 
-            let labels = (issue.labels || [])
-              .map((l) => (typeof l === 'string' ? l : l.name))
-              .filter(Boolean);
+            // label list
+            let labels = (issue.labels || []).map((l) => (typeof l === 'string' ? l : l.name)).filter(Boolean);
 
+            // Single-open-issue policy
             const enforceSingleIssue = async () => {
               if (!ENFORCE_SINGLE_OPEN_ISSUE_PER_USER) return true;
 
               const otherUrl = await findOtherOpenSleepLogIssueUrl(owner, repo, issueAuthor, issue_number);
               if (!otherUrl) return true;
 
-              await comment(
+              await createComment(
                 owner,
                 repo,
                 issue_number,
@@ -416,28 +495,22 @@ jobs:
               return false;
             };
 
-            // If not enabled yet, only enable when marker exists AND single-issue policy allows it
+            // Enable label on first use when marker exists
             if (!labels.includes(REQUIRED_LABEL)) {
               const issueBody = issue.body || '';
               const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
-
               if (!hasMarker) return;
 
               const ok = await enforceSingleIssue();
               if (!ok) return;
 
-              await github.rest.issues.addLabels({
-                owner,
-                repo,
-                issue_number,
-                labels: [REQUIRED_LABEL],
-              });
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [REQUIRED_LABEL] });
               labels.push(REQUIRED_LABEL);
 
-              await comment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
+              await createComment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
             }
 
-            // Always enforce single-issue policy for EVERY command
+            // Always enforce for every command
             const okSingle = await enforceSingleIssue();
             if (!okSingle) return;
 
@@ -446,116 +519,151 @@ jobs:
             const eventStamp = fmtUtc8Stamp(eventUtc8);
             const eventDateKey = fmtUtc8DateKey(eventUtc8);
 
-            const applyRebuild = async ({ preserveIfEmpty } = { preserveIfEmpty: false }) => {
-              const events = await buildTrustedEvents(owner, repo, issue_number);
-              const { map } = buildMapFromEvents(events);
+            // Load latest issue body (for state/table updates)
+            const latestIssueRes = await github.rest.issues.get({ owner, repo, issue_number });
+            const latestIssue = latestIssueRes.data;
+            const ensured = ensureTableBlock(latestIssue.body || '');
+            const state = parseStateFromBody(ensured.body);
 
-              const latestIssueRes = await github.rest.issues.get({ owner, repo, issue_number });
-              const latestIssue = latestIssueRes.data;
+            // Decide mode
+            const forceFullRebuild = parsed.cmd === '/rebuild' || parsed.cmd === '/undo' || !state;
 
-              const { body: ensuredBody, startMark, endMark } = ensureTableBlock(latestIssue.body || '');
+            // Build working map
+            let map = new Map();
+            let cursor = 0;
 
-              if (preserveIfEmpty && map.size === 0) {
-                if ((latestIssue.body || '') !== ensuredBody) {
-                  await github.rest.issues.update({
+            async function writeBodyWithTableAndState(mapToWrite, cursorToWrite, noteIfNoEvents) {
+              const latest2 = await github.rest.issues.get({ owner, repo, issue_number });
+              const ensured2 = ensureTableBlock(latest2.data.body || '');
+              const { before, after } = extractTable(ensured2.body, ensured2.startMark, ensured2.endMark);
+
+              // If map empty: keep existing table (do not overwrite) but ensure blocks+state exist
+              if (mapToWrite.size === 0) {
+                let bodyKeep = ensured2.body;
+                const st = { cursor: cursorToWrite || 0, rows: {} };
+                bodyKeep = upsertStateIntoBody(bodyKeep, st);
+
+                if ((latest2.data.body || '') !== bodyKeep) {
+                  await github.rest.issues.update({ owner, repo, issue_number, body: bodyKeep });
+                }
+
+                if (noteIfNoEvents) {
+                  await createComment(
                     owner,
                     repo,
                     issue_number,
-                    body: ensuredBody,
-                  });
+                    `@${commenter} ℹ️ 当前未检测到可信事件日志（SLEEP_LOG_EVENT），已保持现有表格不变。\n` +
+                      `当首次成功记录后，表格将以事件日志为准自动重建（也可用 \`/rebuild\`）。`
+                  );
                 }
-                return { map, isEmpty: true };
+                return;
               }
 
-              const { before, after } = extractTable(ensuredBody, startMark, endMark);
-              const rebuiltMiddle = rebuildMiddleFromMap(map);
-              const finalBody = before + rebuiltMiddle + after;
+              const middle = buildTableMiddle(mapToWrite, eventDateKey);
+              let finalBody = before + middle + after;
 
-              await github.rest.issues.update({
-                owner,
-                repo,
-                issue_number,
-                body: finalBody,
-              });
+              // write state
+              const stateObj = { cursor: cursorToWrite || 0, rows: buildMapToRowsObject(mapToWrite) };
+              finalBody = upsertStateIntoBody(finalBody, stateObj);
 
-              return { map, isEmpty: map.size === 0 };
-            };
-
-            // Always rebuild first; preserve existing table if no trusted events exist yet.
-            const firstRebuild = await applyRebuild({ preserveIfEmpty: true });
-
-            if (firstRebuild.isEmpty) {
-              await comment(
-                owner,
-                repo,
-                issue_number,
-                `@${commenter} ℹ️ 当前未检测到可信事件日志（SLEEP_LOG_EVENT），已保持现有表格不变。\n` +
-                  `当首次成功记录后，表格将以事件日志为准自动重建（也可用 \`/rebuild\`）。`
-              );
+              await github.rest.issues.update({ owner, repo, issue_number, body: finalBody });
             }
 
-            if (parsed.cmd === '/rebuild') {
-              await comment(owner, repo, issue_number, `@${commenter} ✅ 已从事件日志重建表格。`);
-              return;
+            async function fullRebuildAndWrite({ commentOnNoEvents } = { commentOnNoEvents: false }) {
+              const events = await buildTrustedEventsFull(owner, repo, issue_number);
+              const rebuilt = buildMapFromEvents(events);
+              map = rebuilt.map;
+              cursor = rebuilt.cursor;
+
+              await writeBodyWithTableAndState(map, cursor, commentOnNoEvents && map.size === 0);
+              return { map, cursor };
             }
 
+            function applyEventToMap(mapRef, evt) {
+              // evt: sleep|wake with stamp/dateKey/source
+              const entry = mapRef.get(evt.dateKey) || { sleep: '', wake: '', duration: '', source: '' };
+
+              if (evt.cmd === 'sleep') {
+                if (!entry.sleep || evt.stamp >= entry.sleep) entry.sleep = evt.stamp;
+              } else if (evt.cmd === 'wake') {
+                if (!entry.wake || evt.stamp >= entry.wake) entry.wake = evt.stamp;
+              }
+
+              if (entry.source !== 'backfill') entry.source = evt.source || 'live';
+              computeDuration(entry);
+              mapRef.set(evt.dateKey, entry);
+            }
+
+            // Init map/cursor either from state (fast) or full rebuild (slow)
+            if (forceFullRebuild) {
+              await fullRebuildAndWrite({ commentOnNoEvents: true });
+
+              if (parsed.cmd === '/rebuild') {
+                await createComment(owner, repo, issue_number, `@${commenter} ✅ 已从事件日志重建表格。`);
+                return;
+              }
+              // For /undo we still need to continue handling below, because /undo isn't just rebuild.
+              // (We'll handle /undo by using full events list again to find the latest revocable event.)
+            } else {
+              // Fast path: trust cached state rows
+              cursor = state.cursor;
+              map = buildRowsObjectToMap(state.rows);
+
+              // Ensure table block exists and state exists (but don't overwrite table here)
+              // We'll rewrite after successful record.
+              const ensuredBody = ensured.body;
+              if (!ensuredBody.includes(STATE_PREFIX)) {
+                const newBody = upsertStateIntoBody(ensuredBody, state);
+                if ((latestIssue.body || '') !== newBody) {
+                  await github.rest.issues.update({ owner, repo, issue_number, body: newBody });
+                }
+              }
+            }
+
+            // /undo handler (always uses full rebuild/events for correctness)
             if (parsed.cmd === '/undo') {
-              // Find latest non-revoked sleep/wake event and revoke it (within UNDO_MAX_MINUTES)
-              const events = await buildTrustedEvents(owner, repo, issue_number);
-              const { revoked } = buildMapFromEvents(events);
+              const events = await buildTrustedEventsFull(owner, repo, issue_number);
 
-              // Find latest event (by comment time desc)
+              // Build revoked set
+              const revoked = new Set();
+              for (const e of events) if (e.cmd === 'undo') revoked.add(e.revokes);
+
               const candidates = events
                 .filter((e) => e.cmd === 'sleep' || e.cmd === 'wake')
                 .filter((e) => !revoked.has(e.id))
                 .sort((a, b) => (a._comment_created_at < b._comment_created_at ? 1 : -1));
 
               const target = candidates[0];
-
               if (!target) {
-                await comment(owner, repo, issue_number, `@${commenter} ⚠️ 没有找到可撤销的记录（sleep/wake）。`);
+                await createComment(owner, repo, issue_number, `@${commenter} ⚠️ 没有找到可撤销的记录（sleep/wake）。`);
                 return;
               }
 
-              const targetUtc8 = toUtc8Date(target._comment_created_at);
-              const targetStamp = fmtUtc8Stamp(targetUtc8);
-
               const diffMin = Math.round((new Date(context.payload.comment.created_at).getTime() - new Date(target._comment_created_at).getTime()) / 60000);
+              const targetUtc8 = toUtc8Date(target._comment_created_at);
+              const targetStampUtc8 = fmtUtc8Stamp(targetUtc8);
 
               if (diffMin > UNDO_MAX_MINUTES) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
                   `@${commenter} ⚠️ 只能撤销最近 **${UNDO_MAX_MINUTES}** 分钟内的记录。\n` +
-                    `最近一次记录时间：**${targetStamp}**（UTC+8）\n` +
+                    `最近一次记录时间：**${targetStampUtc8}**（UTC+8）\n` +
                     `距现在约：**${diffMin}** 分钟`
                 );
                 return;
               }
 
-              // Create an undo comment first, then write an undo event with id=comment.id (self-consistent)
-              const undoComment = await comment(owner, repo, issue_number, `Recorded **Undo**: revoking last event...`);
-              const undoEvt = {
-                id: undoComment.id,
-                cmd: 'undo',
-                revokes: target.id,
-                at: eventStamp,
-                source: 'live',
-              };
+              // Create placeholder comment -> update with undo event (needs id)
+              const placeholder = await createComment(owner, repo, issue_number, `Recording undo...`);
+              const undoEvt = { id: placeholder.id, cmd: 'undo', revokes: target.id, at: eventStamp, source: 'live' };
+              await updateComment(owner, repo, placeholder.id, buildEventComment(undoEvt));
 
-              // Update the same comment to include the machine-readable event payload
-              // We can't edit comments via issues API (it's in issues.updateComment).
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: undoComment.id,
-                body: buildEventComment(undoEvt),
-              });
+              // Full rebuild + write state/table
+              await fullRebuildAndWrite({ commentOnNoEvents: false });
 
-              await applyRebuild({ preserveIfEmpty: false });
-
-              await comment(
+              await createComment(
                 owner,
                 repo,
                 issue_number,
@@ -564,11 +672,11 @@ jobs:
               return;
             }
 
-            // Build map from current trusted events (after first rebuild)
-            const eventsNow = await buildTrustedEvents(owner, repo, issue_number);
-            const { map } = buildMapFromEvents(eventsNow);
+            // If we are in fast path, we can optionally apply new events since cursor to keep state in sync.
+            // But we don't strictly need to, because only bot writes events; and each command will add one new event.
+            // We keep it minimal: rely on state + this command's event.
 
-            // Find latest incomplete sleep row (Sleep set, Wake empty), newest date first
+            // Resolve dateKey/stamp for /sleep /wake
             const findLatestIncompleteDateKey = () => {
               const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
               for (const k of keys) {
@@ -578,9 +686,8 @@ jobs:
               return null;
             };
 
-            // Resolve target
             let appliedDateKey = null;
-            let targetStamp = null; // always full "YYYY-MM-DD HH:MM" in UTC+8
+            let targetStamp = null;
             let source = 'live';
 
             if (!parsed.explicitTime) {
@@ -592,7 +699,7 @@ jobs:
                 targetStamp = eventStamp;
               }
             } else if (parsed.explicitTime && !parsed.explicitDate) {
-              await comment(
+              await createComment(
                 owner,
                 repo,
                 issue_number,
@@ -604,7 +711,7 @@ jobs:
               return;
             } else if (parsed.explicitDate && parsed.explicitTime) {
               if (!parsed.isBackfill) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -622,7 +729,7 @@ jobs:
               const minAllowed = addDaysToUtc8DateKey(todayKey, -BACKFILL_MAX_DAYS);
 
               if (minAllowed && (appliedDateKey < minAllowed || appliedDateKey > todayKey)) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -633,7 +740,7 @@ jobs:
               }
 
               if (targetStamp > eventStamp) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -651,7 +758,7 @@ jobs:
 
             if (parsed.cmd === '/sleep') {
               if (entry.sleep && source !== 'backfill') {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -664,7 +771,7 @@ jobs:
               }
 
               if (entry.wake && targetStamp >= entry.wake) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -674,7 +781,7 @@ jobs:
               }
 
               if (!canSetField(entry.sleep, targetStamp, source === 'backfill', eventStamp)) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -686,7 +793,7 @@ jobs:
               entry.sleep = targetStamp;
             } else {
               if (entry.wake && source !== 'backfill') {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -699,7 +806,7 @@ jobs:
               }
 
               if (entry.sleep && targetStamp <= entry.sleep) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -709,7 +816,7 @@ jobs:
               }
 
               if (!canSetField(entry.wake, targetStamp, source === 'backfill', eventStamp)) {
-                await comment(
+                await createComment(
                   owner,
                   repo,
                   issue_number,
@@ -725,8 +832,8 @@ jobs:
             computeDuration(entry);
             map.set(appliedDateKey, entry);
 
-            // Create placeholder comment first to get a stable comment id, then update it with the event payload
-            const placeholder = await comment(owner, repo, issue_number, `Recording event...`);
+            // Record trusted event comment with stable id (placeholder then update)
+            const placeholder = await createComment(owner, repo, issue_number, `Recording event...`);
             const evt = {
               id: placeholder.id,
               cmd: parsed.cmd === '/sleep' ? 'sleep' : 'wake',
@@ -734,12 +841,10 @@ jobs:
               dateKey: appliedDateKey,
               source,
             };
+            await updateComment(owner, repo, placeholder.id, buildEventComment(evt));
 
-            await github.rest.issues.updateComment({
-              owner,
-              repo,
-              comment_id: placeholder.id,
-              body: buildEventComment(evt),
-            });
+            // Apply event to map already done; update cursor to include this comment id
+            cursor = Math.max(cursor || 0, placeholder.id);
 
-            await applyRebuild({ preserveIfEmpty: false });
+            // Write table + state (do not keep old table)
+            await writeBodyWithTableAndState(map, cursor, false);
