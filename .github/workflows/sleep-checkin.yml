@@ -40,6 +40,9 @@ jobs:
             const EVENT_PREFIX = '<!--SLEEP_LOG_EVENT ';
             const EVENT_SUFFIX = '-->';
 
+            // One-open-issue-per-user policy
+            const ENFORCE_SINGLE_OPEN_ISSUE_PER_USER = true;
+
             // ----------------------------
             // Helpers
             // ----------------------------
@@ -252,7 +255,6 @@ jobs:
             async function buildMapFromTrustedEvents(owner, repo, issue_number) {
               const comments = await listAllComments(owner, repo, issue_number);
 
-              // Reduce to dateKey map. Rule: never earlier (keep latest stamp lexicographically)
               const map = new Map();
 
               for (const c of comments) {
@@ -281,6 +283,36 @@ jobs:
               if (oldStamp) return newFullStamp >= oldStamp;
               if (!isBackfill) return newFullStamp >= eventStamp;
               return true;
+            }
+
+            async function findOtherOpenSleepLogIssueUrl(owner, repo, issueAuthor, currentIssueNumber) {
+              // We only need to find ONE other open issue.
+              const per_page = 100;
+              let page = 1;
+
+              while (true) {
+                const res = await github.rest.issues.listForRepo({
+                  owner,
+                  repo,
+                  state: 'open',
+                  labels: REQUIRED_LABEL,
+                  per_page,
+                  page,
+                });
+
+                const items = res.data || [];
+                for (const it of items) {
+                  if (it.pull_request) continue;
+                  if (it.user?.login !== issueAuthor) continue;
+                  if (it.number === currentIssueNumber) continue;
+                  return it.html_url;
+                }
+
+                if (items.length < per_page) break;
+                page += 1;
+              }
+
+              return null;
             }
 
             // ----------------------------
@@ -314,35 +346,55 @@ jobs:
               });
             }
 
-            // Must have required label (or auto-add it)
+            // Current labels
             let labels = (issue.labels || [])
               .map((l) => (typeof l === 'string' ? l : l.name))
               .filter(Boolean);
 
+            // Enforce single open sleep-log issue per user WHEN enabling
+            const enforceSingleIssue = async () => {
+              if (!ENFORCE_SINGLE_OPEN_ISSUE_PER_USER) return true;
+
+              const otherUrl = await findOtherOpenSleepLogIssueUrl(owner, repo, issueAuthor, issue_number);
+              if (!otherUrl) return true;
+
+              await comment(
+                owner,
+                repo,
+                issue_number,
+                `@${commenter} ⚠️ 为了避免记录分散，你只能拥有 **一个** 处于 open 状态的 sleep-log issue。\n` +
+                  `请到这个 issue 继续记录：${otherUrl}\n\n` +
+                  `（你可以关闭当前这个 issue，或删除它重新使用模板创建。）`
+              );
+              return false;
+            };
+
+            // Must have required label (or auto-add it)
             if (!labels.includes(REQUIRED_LABEL)) {
               const issueBody = issue.body || '';
               const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
 
-              if (hasMarker) {
-                await github.rest.issues.addLabels({
-                  owner,
-                  repo,
-                  issue_number,
-                  labels: [REQUIRED_LABEL],
-                });
-                labels.push(REQUIRED_LABEL);
+              if (!hasMarker) return;
 
-                await comment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
-              } else {
-                return;
-              }
+              const ok = await enforceSingleIssue();
+              if (!ok) return;
+
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number,
+                labels: [REQUIRED_LABEL],
+              });
+              labels.push(REQUIRED_LABEL);
+
+              await comment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
             }
 
             // Helper: rebuild table from trusted events and overwrite body table block
             const applyRebuild = async () => {
               const map = await buildMapFromTrustedEvents(owner, repo, issue_number);
 
-              // Use latest issue body (refetch once to reduce stale overwrite risk)
+              // Refetch to reduce stale overwrite risk
               const latestIssueRes = await github.rest.issues.get({ owner, repo, issue_number });
               const latestIssue = latestIssueRes.data;
 
@@ -361,8 +413,7 @@ jobs:
               return map;
             };
 
-            // ⭐ Scheme A: always rebuild first to undo any manual edits, even if command will be rejected later
-            // (But if there are no trusted events yet, this rebuild may produce an empty table; that's expected.)
+            // Scheme A: always rebuild first (anti-tamper), even if the command will be rejected later
             let map = await applyRebuild();
 
             if (parsed.cmd === '/rebuild') {
@@ -425,7 +476,6 @@ jobs:
               targetStamp = `${parsed.explicitDate} ${parsed.explicitTime}`;
               source = 'backfill';
 
-              // Enforce 7-day window
               const todayKey = eventDateKey;
               const minAllowed = addDaysToUtc8DateKey(todayKey, -BACKFILL_MAX_DAYS);
 
@@ -445,7 +495,6 @@ jobs:
 
             const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source: '' };
 
-            // Enforce "only once per day" unless backfill
             if (parsed.cmd === '/sleep' && entry.sleep && source !== 'backfill') {
               await comment(
                 owner,
@@ -472,7 +521,6 @@ jobs:
               return;
             }
 
-            // Handle /sleep
             if (parsed.cmd === '/sleep') {
               if (entry.wake && targetStamp >= entry.wake) {
                 await comment(
@@ -497,7 +545,6 @@ jobs:
 
               entry.sleep = targetStamp;
             } else {
-              // Handle /wake
               if (entry.sleep && targetStamp <= entry.sleep) {
                 await comment(
                   owner,
@@ -535,10 +582,10 @@ jobs:
             };
             await comment(owner, repo, issue_number, buildEventComment(evt));
 
-            // Rebuild again so table definitely reflects the new trusted event
-            map = await applyRebuild();
+            // Rebuild again so table reflects the new trusted event
+            await applyRebuild();
 
-            // Add BACKFILL_LABEL on issue if any backfill happened
+            // Add BACKFILL_LABEL if any backfill happened
             if (source === 'backfill') {
               const newLabels = Array.from(new Set([...(labels || []), BACKFILL_LABEL]));
               await github.rest.issues.update({
