@@ -442,7 +442,7 @@ jobs:
                   owner,
                   repo,
                   issue_number,
-                  `@${commenter} ❌ 不能把 **Wake** 设为 **${targetStamp}**，因为它���于或等于已记录的 **Sleep**（**${entry.sleep}**）。\n` +
+                  `@${commenter} ❌ 不能把 **Wake** 设为 **${targetStamp}**，因为它晚于或等于已记录的 **Sleep**（**${entry.sleep}**）。\n` +
                     `💡 如需修正，请先用 backfill 修正 Sleep，或检查时间。`
                 );
                 return;
