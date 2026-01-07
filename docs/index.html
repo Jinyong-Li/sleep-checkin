@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sleep Check-in</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#111827" />
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; background:#0b1020; color:#e5e7eb; }
+      header { padding: 16px; background:#111827; position: sticky; top: 0; }
+      main { padding: 16px; max-width: 900px; margin: 0 auto; }
+      .card { background:#111827; border: 1px solid #1f2937; border-radius: 12px; padding: 12px; margin: 12px 0; }
+      button { background:#2563eb; color:white; border:0; padding: 10px 12px; border-radius: 10px; font-size: 14px; margin: 6px 6px 6px 0; }
+      button.secondary { background:#374151; }
+      button.danger { background:#b91c1c; }
+      input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #374151; background:#0b1020; color:#e5e7eb; }
+      a { color:#93c5fd; text-decoration: none; }
+      pre { white-space: pre-wrap; word-break: break-word; background:#0b1020; border: 1px solid #1f2937; padding: 10px; border-radius: 10px; }
+      .row { display:flex; gap: 12px; flex-wrap: wrap; align-items:center; }
+      .muted { color:#9ca3af; }
+      .pill { display:inline-block; padding:2px 8px; border: 1px solid #374151; border-radius: 999px; font-size: 12px; color:#d1d5db; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="row">
+        <div style="font-weight:700;">Sleep Check-in</div>
+        <div class="pill" id="repoPill"></div>
+        <div style="margin-left:auto;" class="muted" id="authState">Not logged in</div>
+      </div>
+    </header>
+
+    <main>
+      <div class="card" id="setupCard">
+        <div style="font-weight:700; margin-bottom:8px;">设置</div>
+        <div class="muted" style="margin-bottom:10px;">
+          这是一个 PWA（可添加到主屏幕）。登录后可一键在你的 sleep-log issue 下发表评论命令：/sleep /wake /undo /archive，并查看 bot 回复与表格。
+        </div>
+
+        <div style="margin-bottom:8px;">Worker Base URL（在 docs/config.js 里配置）</div>
+        <input id="workerUrl" readonly />
+
+        <div style="margin-top:10px;">
+          <button id="loginBtn">Login with GitHub</button>
+          <button id="logoutBtn" class="secondary">Logout</button>
+        </div>
+        <div class="muted" id="loginHint" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="card" id="issueCard" style="display:none;">
+        <div class="row">
+          <div style="font-weight:700;">你的 Sleep Log Issue</div>
+          <div class="muted" id="issueStatus"></div>
+        </div>
+        <div style="margin-top:8px;">
+          <div id="issueLink"></div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <button data-cmd="/sleep">Sleep</button>
+          <button data-cmd="/wake">Wake</button>
+          <button data-cmd="/undo" class="danger">Undo</button>
+          <button data-cmd="/archive" class="secondary">Archive</button>
+          <button id="refreshBtn" class="secondary">Refresh</button>
+        </div>
+
+        <div class="muted" style="margin-top:8px;">
+          提示：/archive 会关闭当前 issue（不可用 /undo 撤销）。误操作可手动 Reopen。
+        </div>
+      </div>
+
+      <div class="card" id="commentsCard" style="display:none;">
+        <div class="row">
+          <div style="font-weight:700;">最新评论（含 bot）</div>
+          <div class="muted" id="commentsMeta"></div>
+        </div>
+        <pre id="commentsPre"></pre>
+      </div>
+
+      <div class="card" id="tableCard" style="display:none;">
+        <div class="row">
+          <div style="font-weight:700;">Issue Body（含表格）</div>
+          <div class="muted">（原样显示；你也可以点上面的 issue 链接去 GitHub 看渲染效果）</div>
+        </div>
+        <pre id="bodyPre"></pre>
+      </div>
+    </main>
+
+    <script src="./config.js"></script>
+    <script>
+      const cfg = window.__SLEEP_CHECKIN_CONFIG__ || {};
+      const repo = cfg.REPO;
+      const workerBase = cfg.WORKER_BASE_URL;
+
+      const $ = (id) => document.getElementById(id);
+
+      $("repoPill").textContent = repo || "(repo not set)";
+      $("workerUrl").value = workerBase || "";
+
+      function mustConfig() {
+        if (!repo || !workerBase || workerBase.includes("REPLACE_ME")) {
+          $("loginHint").textContent = "请先编辑 docs/config.js：设置 WORKER_BASE_URL（你的 Cloudflare Worker 地址）。";
+          $("loginBtn").disabled = true;
+          return false;
+        }
+        $("loginHint").textContent = "";
+        $("loginBtn").disabled = false;
+        return true;
+      }
+
+      mustConfig();
+
+      function setAuthState(text) {
+        $("authState").textContent = text;
+      }
+
+      async function api(path, opts = {}) {
+        const res = await fetch(workerBase + path, {
+          ...opts,
+          headers: {
+            "Content-Type": "application/json",
+            ...(opts.headers || {}),
+          },
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          throw new Error(`API ${path} failed: ${res.status} ${t}`);
+        }
+        return res.json();
+      }
+
+      async function ensureSession() {
+        const sid = localStorage.getItem("sleepcheckin_session");
+        if (!sid) return null;
+        return sid;
+      }
+
+      async function loadMeAndIssue() {
+        const sid = await ensureSession();
+        if (!sid) {
+          setAuthState("Not logged in");
+          $("issueCard").style.display = "none";
+          $("commentsCard").style.display = "none";
+          $("tableCard").style.display = "none";
+          return;
+        }
+
+        setAuthState("Loading…");
+        const me = await api(`/me?session=${encodeURIComponent(sid)}`);
+        setAuthState(`@${me.login}`);
+
+        const issue = await api(`/find-issue?session=${encodeURIComponent(sid)}`);
+        if (!issue || !issue.number) {
+          $("issueCard").style.display = "block";
+          $("issueStatus").textContent = "未找到 open 的 sleep-log issue";
+          $("issueLink").innerHTML = `
+            <div class="muted">请先在 GitHub 用模板创建你的 Sleep Log issue，并确保它 open 且带 label: sleep-log。</div>
+            <div class="muted">创建后点 Refresh。</div>
+          `;
+          $("commentsCard").style.display = "none";
+          $("tableCard").style.display = "none";
+          return;
+        }
+
+        $("issueCard").style.display = "block";
+        $("issueStatus").textContent = `#${issue.number}`;
+        $("issueLink").innerHTML = `<a target="_blank" rel="noreferrer" href="${issue.html_url}">${issue.title}</a>`;
+
+        await refreshIssueViews(issue.number);
+      }
+
+      async function refreshIssueViews(issueNumber) {
+        const sid = await ensureSession();
+        const data = await api(`/issue-data?session=${encodeURIComponent(sid)}&number=${issueNumber}`);
+
+        $("commentsCard").style.display = "block";
+        $("tableCard").style.display = "block";
+
+        $("commentsMeta").textContent = `${data.comments.length} comments (showing latest 20)`;
+        $("commentsPre").textContent = data.comments.map(c => {
+          const who = c.user_login;
+          const at = c.created_at;
+          return `[${at}] ${who}:\n${c.body}\n\n---\n`;
+        }).join("\n");
+
+        $("bodyPre").textContent = data.issue_body || "";
+      }
+
+      $("loginBtn").addEventListener("click", () => {
+        if (!mustConfig()) return;
+        // Worker /login will redirect to GitHub auth
+        window.location.href = workerBase + "/login";
+      });
+
+      $("logoutBtn").addEventListener("click", () => {
+        localStorage.removeItem("sleepcheckin_session");
+        setAuthState("Not logged in");
+        loadMeAndIssue();
+      });
+
+      $("refreshBtn").addEventListener("click", async () => {
+        await loadMeAndIssue();
+      });
+
+      document.addEventListener("click", async (e) => {
+        const btn = e.target.closest("button[data-cmd]");
+        if (!btn) return;
+
+        const cmd = btn.getAttribute("data-cmd");
+        const sid = await ensureSession();
+        if (!sid) return alert("请先登录");
+
+        btn.disabled = true;
+        try {
+          const issue = await api(`/find-issue?session=${encodeURIComponent(sid)}`);
+          if (!issue?.number) {
+            alert("未找到 open 的 sleep-log issue");
+            return;
+          }
+
+          await api(`/comment?session=${encodeURIComponent(sid)}`, {
+            method: "POST",
+            body: JSON.stringify({ number: issue.number, body: cmd }),
+          });
+
+          // Give workflow some time; still refresh immediately.
+          await refreshIssueViews(issue.number);
+        } catch (err) {
+          alert(err.message || String(err));
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      // Handle callback: Worker redirects to FRONTEND_URL with ?session=...
+      (function initFromQuery() {
+        const u = new URL(window.location.href);
+        const session = u.searchParams.get("session");
+        if (session) {
+          localStorage.setItem("sleepcheckin_session", session);
+          u.searchParams.delete("session");
+          window.history.replaceState({}, "", u.toString());
+        }
+      })();
+
+      loadMeAndIssue();
+    </script>
+  </body>
+</html>
