@@ -32,6 +32,9 @@ jobs:
             // 04:00 (UTC+8): sleep before this hour counts as "previous night" (dateKey - 1 day)
             const CUTOFF_HOUR = 4;
 
+            // Title format
+            const TITLE_PREFIX = '[Sleep Log]';
+
             // ----------------------------
             // Helpers
             // ----------------------------
@@ -133,8 +136,6 @@ jobs:
                 if (!r.startsWith('|')) continue;
 
                 const parts = r.split('|').map((s) => s.trim());
-                // Markdown 表格行格式：'| col1 | col2 | col3 | col4 | col5 |'
-                // split 后：['', 'col1', 'col2', 'col3', 'col4', 'col5', '']
                 if (parts.length < 6) continue;
 
                 const date = parts[1];
@@ -176,7 +177,6 @@ jobs:
                   const m = diffMin % 60;
                   entry.duration = `${h}h${pad(m)}m`;
                 } else {
-                  // wake < sleep 或超过 24h，duration 保持为空
                   entry.duration = '';
                 }
               }
@@ -259,6 +259,17 @@ jobs:
             // Only allow issue author
             if (!issueAuthor || commenter !== issueAuthor) return;
 
+            // Auto-update title to include author login (best-effort)
+            const desiredTitle = `${TITLE_PREFIX} @${issueAuthor}`;
+            if (!issue.title?.includes(`@${issueAuthor}`)) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number,
+                title: desiredTitle,
+              });
+            }
+
             // Must have required label (or auto-add it)
             let labels = (issue.labels || [])
               .map((l) => (typeof l === 'string' ? l : l.name))
@@ -269,7 +280,6 @@ jobs:
               const issueBody = issue.body || '';
               const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
 
-              // Only allow issue author to auto-enable
               if (hasMarker) {
                 // Auto-add label
                 await github.rest.issues.addLabels({
@@ -278,11 +288,10 @@ jobs:
                   issue_number,
                   labels: [REQUIRED_LABEL],
                 });
-                labels.push(REQUIRED_LABEL); // update local array
+                labels.push(REQUIRED_LABEL);
 
                 await comment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
               } else {
-                // Not enabled, ignore
                 return;
               }
             }
@@ -329,7 +338,7 @@ jobs:
                 repo,
                 issue_number,
                 `@${commenter} ⚠️ 不支持 \`${parsed.cmd} HH:MM\` 格式。\n` +
-                  `���使用：\n` +
+                  `请使用：\n` +
                   `- \`${parsed.cmd}\` 记录当前时间\n` +
                   `- \`${parsed.cmd} YYYY-MM-DD HH:MM backfill\` 补记/修正（仅允许最近 ${BACKFILL_MAX_DAYS} 天）`
               );
@@ -433,7 +442,7 @@ jobs:
                   owner,
                   repo,
                   issue_number,
-                  `@${commenter} ❌ 不能把 **Wake** 设为 **${targetStamp}**，因为它早于或等于已记录的 **Sleep**（**${entry.sleep}**）。\n` +
+                  `@${commenter} ❌ 不能把 **Wake** 设为 **${targetStamp}**，因为它���于或等于已记录的 **Sleep**（**${entry.sleep}**）。\n` +
                     `💡 如需修正，请先用 backfill 修正 Sleep，或检查时间。`
                 );
                 return;
