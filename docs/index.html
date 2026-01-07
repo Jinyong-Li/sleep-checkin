@@ -418,8 +418,12 @@
         $("lbMeta").textContent = data?.generated_at ? `generated: ${data.generated_at}` : "";
 
         const sections = [
+          { key: "earliest_sleep", title: "最早睡（Top 5）" },
           { key: "latest_sleep", title: "最晚睡（Top 5）" },
+
           { key: "earliest_wake", title: "最早起（Top 5）" },
+          { key: "latest_wake", title: "最晚起（Top 5）" },
+
           { key: "longest_sleep", title: "睡得最长（Top 5）" },
           { key: "shortest_sleep", title: "睡得最短（Top 5）" },
         ];
