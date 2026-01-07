@@ -45,9 +45,14 @@
 - `/undo`：撤销最近一次 sleep/wake 记录（仅限最近 **10 分钟**内）
   - 可以连续撤销多次，但每次撤销的那条记录都必须在 10 分钟窗口内
 
-### 修复表格
+### 修复表格（/rebuild）
 - `/rebuild`：从事件日志重建表格（不会新增记录）
 
+### 封存当前日志（/archive）
+- `/archive`：自动封存并关闭当前 Sleep Log issue
+  - 机器人会先从事件日志重建一次，确保数据最新
+  - 然后把标题改为：`[Sleep Log] @user (start ~ end) [archived]`
+  - 最后关闭 issue；你可以再新建一个新的 Sleep Log issue 继续记录
 ---
 
 ## 规则（时间归属与匹配）
