@@ -25,7 +25,6 @@ jobs:
             // ----------------------------
             const REQUIRED_LABEL = 'sleep-log';
 
-            const BACKFILL_LABEL = 'backfill';
             const BACKFILL_KEYWORD = 'backfill';
             const BACKFILL_MAX_DAYS = 7;
 
@@ -286,7 +285,6 @@ jobs:
             }
 
             async function findOtherOpenSleepLogIssueUrl(owner, repo, issueAuthor, currentIssueNumber) {
-              // We only need to find ONE other open issue.
               const per_page = 100;
               let page = 1;
 
@@ -325,17 +323,14 @@ jobs:
             const repo = context.repo.repo;
             const issue_number = context.payload.issue.number;
 
-            // Read issue
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number });
             const issue = issueRes.data;
 
             const commenter = context.payload.comment.user.login;
             const issueAuthor = issue.user?.login;
 
-            // Only allow issue author
             if (!issueAuthor || commenter !== issueAuthor) return;
 
-            // Auto-update title to include author login (best-effort)
             const desiredTitle = `${TITLE_PREFIX} @${issueAuthor}`;
             if (!issue.title?.includes(`@${issueAuthor}`)) {
               await github.rest.issues.update({
@@ -346,12 +341,10 @@ jobs:
               });
             }
 
-            // Current labels
             let labels = (issue.labels || [])
               .map((l) => (typeof l === 'string' ? l : l.name))
               .filter(Boolean);
 
-            // Enforce single open sleep-log issue per user WHEN enabling
             const enforceSingleIssue = async () => {
               if (!ENFORCE_SINGLE_OPEN_ISSUE_PER_USER) return true;
 
@@ -369,7 +362,6 @@ jobs:
               return false;
             };
 
-            // Must have required label (or auto-add it)
             if (!labels.includes(REQUIRED_LABEL)) {
               const issueBody = issue.body || '';
               const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
@@ -390,11 +382,9 @@ jobs:
               await comment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
             }
 
-            // Helper: rebuild table from trusted events and overwrite body table block
             const applyRebuild = async () => {
               const map = await buildMapFromTrustedEvents(owner, repo, issue_number);
 
-              // Refetch to reduce stale overwrite risk
               const latestIssueRes = await github.rest.issues.get({ owner, repo, issue_number });
               const latestIssue = latestIssueRes.data;
 
@@ -413,7 +403,6 @@ jobs:
               return map;
             };
 
-            // Scheme A: always rebuild first (anti-tamper), even if the command will be rejected later
             let map = await applyRebuild();
 
             if (parsed.cmd === '/rebuild') {
@@ -421,12 +410,10 @@ jobs:
               return;
             }
 
-            // Event time (UTC+8)
             const eventUtc8 = toUtc8Date(context.payload.comment.created_at);
             const eventStamp = fmtUtc8Stamp(eventUtc8);
             const eventDateKey = fmtUtc8DateKey(eventUtc8);
 
-            // Find latest incomplete sleep row (Sleep set, Wake empty), newest date first
             const findLatestIncompleteDateKey = () => {
               const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
               for (const k of keys) {
@@ -436,9 +423,8 @@ jobs:
               return null;
             };
 
-            // Resolve target
             let appliedDateKey = null;
-            let targetStamp = null; // always full "YYYY-MM-DD HH:MM" in UTC+8
+            let targetStamp = null;
             let source = 'live';
 
             if (!parsed.explicitTime) {
@@ -495,40 +481,26 @@ jobs:
 
             const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source: '' };
 
-            if (parsed.cmd === '/sleep' && entry.sleep && source !== 'backfill') {
-              await comment(
-                owner,
-                repo,
-                issue_number,
-                `@${commenter} ${appliedDateKey} 已经记录过 **Sleep**：**${entry.sleep}**。\n` +
-                  `如需修正，请使用：\n` +
-                  `\`/sleep ${appliedDateKey} HH:MM backfill\`\n` +
-                  `（仅允许最近 ${BACKFILL_MAX_DAYS} 天，且只能把时间改得更晚）`
-              );
-              return;
-            }
-
-            if (parsed.cmd === '/wake' && entry.wake && source !== 'backfill') {
-              await comment(
-                owner,
-                repo,
-                issue_number,
-                `@${commenter} ${appliedDateKey} 已经记录过 **Wake**：**${entry.wake}**。\n` +
-                  `如需修正，请使用：\n` +
-                  `\`/wake ${appliedDateKey} HH:MM backfill\`\n` +
-                  `（仅允许最近 ${BACKFILL_MAX_DAYS} 天，且只能把时间改得更晚）`
-              );
-              return;
-            }
-
             if (parsed.cmd === '/sleep') {
+              if (entry.sleep && source !== 'backfill') {
+                await comment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `@${commenter} ${appliedDateKey} 已经记录过 **Sleep**：**${entry.sleep}**。\n` +
+                    `如需修正，请使用：\n` +
+                    `\`/sleep ${appliedDateKey} HH:MM backfill\`\n` +
+                    `（仅允许最近 ${BACKFILL_MAX_DAYS} 天，且只能把时间改得更晚）`
+                );
+                return;
+              }
+
               if (entry.wake && targetStamp >= entry.wake) {
                 await comment(
                   owner,
                   repo,
                   issue_number,
-                  `@${commenter} ❌ 不能把 **Sleep** 设为 **${targetStamp}**，因为它晚于或等于已记录的 **Wake**（**${entry.wake}**）。\n` +
-                    `💡 如需修正，请先用 backfill 修正 Wake，或检查时间。`
+                  `@${commenter} ❌ 不能把 **Sleep** 设为 **${targetStamp}**，因为它晚于或等于已记录的 **Wake**（**${entry.wake}**）。`
                 );
                 return;
               }
@@ -545,13 +517,25 @@ jobs:
 
               entry.sleep = targetStamp;
             } else {
+              if (entry.wake && source !== 'backfill') {
+                await comment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `@${commenter} ${appliedDateKey} 已经记录过 **Wake**：**${entry.wake}**。\n` +
+                    `如需修正，请使用：\n` +
+                    `\`/wake ${appliedDateKey} HH:MM backfill\`\n` +
+                    `（仅允许最近 ${BACKFILL_MAX_DAYS} 天，且只能把时间改得更晚）`
+                );
+                return;
+              }
+
               if (entry.sleep && targetStamp <= entry.sleep) {
                 await comment(
                   owner,
                   repo,
                   issue_number,
-                  `@${commenter} ❌ 不能把 **Wake** 设为 **${targetStamp}**，因为它早于或等于已记录的 **Sleep**（**${entry.sleep}**）。\n` +
-                    `💡 如需修正，请先用 backfill 修正 Sleep，或检查时间。`
+                  `@${commenter} ❌ 不能把 **Wake** 设为 **${targetStamp}**，因为它早于或等于已记录的 **Sleep**（**${entry.sleep}**）。`
                 );
                 return;
               }
@@ -573,7 +557,6 @@ jobs:
             computeDuration(entry);
             map.set(appliedDateKey, entry);
 
-            // Write trusted event log comment (source of truth)
             const evt = {
               cmd: parsed.cmd === '/sleep' ? 'sleep' : 'wake',
               stamp: targetStamp,
@@ -582,16 +565,4 @@ jobs:
             };
             await comment(owner, repo, issue_number, buildEventComment(evt));
 
-            // Rebuild again so table reflects the new trusted event
             await applyRebuild();
-
-            // Add BACKFILL_LABEL if any backfill happened
-            if (source === 'backfill') {
-              const newLabels = Array.from(new Set([...(labels || []), BACKFILL_LABEL]));
-              await github.rest.issues.update({
-                owner,
-                repo,
-                issue_number,
-                labels: newLabels,
-              });
-            }
