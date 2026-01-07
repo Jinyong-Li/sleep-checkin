@@ -365,6 +365,7 @@ jobs:
               return false;
             };
 
+            // If not enabled yet, only enable when marker exists AND single-issue policy allows it
             if (!labels.includes(REQUIRED_LABEL)) {
               const issueBody = issue.body || '';
               const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
@@ -385,13 +386,39 @@ jobs:
               await comment(owner, repo, issue_number, `@${commenter} ✅ 已自动启用 sleep-log 功能。`);
             }
 
-            const applyRebuild = async () => {
+            // ⭐ Change (1): enforce single-issue policy for EVERY command (not only enabling)
+            // (At this point the issue is enabled: it has REQUIRED_LABEL)
+            const okSingle = await enforceSingleIssue();
+            if (!okSingle) return;
+
+            // Event time (UTC+8)
+            const eventUtc8 = toUtc8Date(context.payload.comment.created_at);
+            const eventStamp = fmtUtc8Stamp(eventUtc8);
+            const eventDateKey = fmtUtc8DateKey(eventUtc8);
+
+            // Helper: rebuild table from trusted events and overwrite body table block
+            // ⭐ Change (2): if map.size === 0, only ensure table block exists, do NOT overwrite existing table content
+            const applyRebuild = async ({ preserveIfEmpty } = { preserveIfEmpty: false }) => {
               const map = await buildMapFromTrustedEvents(owner, repo, issue_number);
 
               const latestIssueRes = await github.rest.issues.get({ owner, repo, issue_number });
               const latestIssue = latestIssueRes.data;
 
               const { body: ensuredBody, startMark, endMark } = ensureTableBlock(latestIssue.body || '');
+
+              if (preserveIfEmpty && map.size === 0) {
+                // Only ensure block exists; keep table content as-is.
+                if ((latestIssue.body || '') !== ensuredBody) {
+                  await github.rest.issues.update({
+                    owner,
+                    repo,
+                    issue_number,
+                    body: ensuredBody,
+                  });
+                }
+                return { map, didRewriteTable: false, isEmpty: true };
+              }
+
               const { before, after } = extractTable(ensuredBody, startMark, endMark);
               const rebuiltMiddle = rebuildMiddleFromMap(map);
               const finalBody = before + rebuiltMiddle + after;
@@ -403,20 +430,29 @@ jobs:
                 body: finalBody,
               });
 
-              return map;
+              return { map, didRewriteTable: true, isEmpty: map.size === 0 };
             };
 
-            let map = await applyRebuild();
+            // Scheme A: always rebuild first (anti-tamper). Preserve existing table if no trusted events exist yet.
+            const firstRebuild = await applyRebuild({ preserveIfEmpty: true });
+            let map = firstRebuild.map;
+
+            if (firstRebuild.isEmpty) {
+              await comment(
+                owner,
+                repo,
+                issue_number,
+                `@${commenter} ℹ️ 当前未检测到可信事件日志（SLEEP_LOG_EVENT），已保持现有表格不变。\n` +
+                  `当首次成功记录后，表格将以事件日志为准自动重建（也可用 \`/rebuild\`）。`
+              );
+            }
 
             if (parsed.cmd === '/rebuild') {
               await comment(owner, repo, issue_number, `@${commenter} ✅ 已从事件日志重建表格。`);
               return;
             }
 
-            const eventUtc8 = toUtc8Date(context.payload.comment.created_at);
-            const eventStamp = fmtUtc8Stamp(eventUtc8);
-            const eventDateKey = fmtUtc8DateKey(eventUtc8);
-
+            // Find latest incomplete sleep row (Sleep set, Wake empty), newest date first
             const findLatestIncompleteDateKey = () => {
               const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
               for (const k of keys) {
@@ -426,8 +462,9 @@ jobs:
               return null;
             };
 
+            // Resolve target
             let appliedDateKey = null;
-            let targetStamp = null;
+            let targetStamp = null; // always full "YYYY-MM-DD HH:MM" in UTC+8
             let source = 'live';
 
             if (!parsed.explicitTime) {
@@ -475,6 +512,19 @@ jobs:
                   issue_number,
                   `@${commenter} ⚠️ Backfill 仅允许最近 **${BACKFILL_MAX_DAYS}** 天（**${minAllowed}** ~ **${todayKey}**）。\n` +
                     `你尝试修改的日期：**${appliedDateKey}**`
+                );
+                return;
+              }
+
+              // ⭐ Change (3): backfill must NOT be in the future
+              if (targetStamp > eventStamp) {
+                await comment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `@${commenter} ⚠️ Backfill 不能填写未来时间。\n` +
+                    `你输入：**${targetStamp}**\n` +
+                    `当前时间：**${eventStamp}**（UTC+8）`
                 );
                 return;
               }
@@ -560,6 +610,7 @@ jobs:
             computeDuration(entry);
             map.set(appliedDateKey, entry);
 
+            // Write trusted event log comment (source of truth)
             const evt = {
               cmd: parsed.cmd === '/sleep' ? 'sleep' : 'wake',
               stamp: targetStamp,
@@ -568,4 +619,5 @@ jobs:
             };
             await comment(owner, repo, issue_number, buildEventComment(evt));
 
-            await applyRebuild();
+            // Rebuild again so table reflects the new trusted event
+            await applyRebuild({ preserveIfEmpty: false });
