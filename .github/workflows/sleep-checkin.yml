@@ -1,7 +1,7 @@
 name: Sleep check-in
 
 on:
-  issue_comment:
+  issue_comment: 
     types: [created]
 
 permissions:
@@ -60,7 +60,7 @@ jobs:
 
             function addDaysToUtc8DateKey(dateKey, deltaDays) {
               // dateKey is YYYY-MM-DD in UTC+8 wall date
-              const m = dateKey. match(/^(\d{4})-(\d{2})-(\d{2})$/);
+              const m = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
               if (!m) return null;
               const [_, Y, M, D] = m;
               // interpret as UTC+8 midnight -> UTC time = (midnight - 8h)
@@ -88,7 +88,7 @@ jobs:
               const endMark = '<!-- SLEEP_LOG_TABLE_END -->';
 
               let body = issueBody || '';
-              if (!body.includes(startMark) || !body.includes(endMark)) {
+              if (! body.includes(startMark) || !body.includes(endMark)) {
                 body = `${body}\n\n${startMark}\n\n| Date | Sleep (UTC+8) | Wake (UTC+8) | Duration | Source |\n|---|---|---|---|---|\n\n${endMark}\n`;
               }
               return { body, startMark, endMark };
@@ -99,7 +99,7 @@ jobs:
               const endIdx = body.indexOf(endMark);
               const before = body.slice(0, startIdx + startMark.length);
               const middle = body.slice(startIdx + startMark.length, endIdx);
-              const after = body. slice(endIdx);
+              const after = body.slice(endIdx);
               return { before, middle, after };
             }
 
@@ -124,7 +124,7 @@ jobs:
                 const parts = r.split('|').map(s => s.trim());
                 // Markdown 表格行格式：'| col1 | col2 | col3 | col4 | col5 |'
                 // split 后：['', 'col1', 'col2', 'col3', 'col4', 'col5', '']
-                if (parts.length < 6) continue; // 至少要 7 个元素（首尾空 + 5 列）
+                if (parts. length < 6) continue; // 至少要 7 个元素（首尾空 + 5 列）
                 const date = parts[1];
                 const sleep = parts[2] || '';
                 const wake = parts[3] || '';
@@ -161,7 +161,7 @@ jobs:
                   entry.duration = `${h}h${pad(m)}m`;
                 } else {
                   // wake < sleep 或超过 24h，duration 保持为空
-                  entry. duration = '';
+                  entry.duration = '';
                 }
               }
             }
@@ -182,7 +182,7 @@ jobs:
               // /wake
               // /sleep HH:MM
               // /wake HH:MM
-              // /sleep YYYY-MM-DD HH: MM backfill
+              // /sleep YYYY-MM-DD HH:MM backfill
               // /wake  YYYY-MM-DD HH:MM backfill
               const parts = (text || '').trim().split(/\s+/).filter(Boolean);
               const cmd = (parts[0] || '').toLowerCase();
@@ -193,7 +193,7 @@ jobs:
               let isBackfill = false;
 
               if (parts.length === 2) {
-                if (/^\d{2}:\d{2}$/. test(parts[1])) {
+                if (/^\d{2}:\d{2}$/.test(parts[1])) {
                   explicitTime = parts[1];
                 }
               } else if (parts.length >= 3) {
@@ -211,7 +211,7 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
-            // Strategy B core rule: 
+            // Strategy B core rule:
             // - If already has value:  only allow update when new >= old (never earlier)
             // - If empty and not backfill: new must be >= eventStamp (can't set earlier than "now")
             function canSetField(oldStamp, newFullStamp, isBackfill, eventStamp) {
@@ -235,7 +235,7 @@ jobs:
             const issue = issueRes.data;
 
             // Must have required label
-            const labels = (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name)).filter(Boolean);
+            const labels = (issue. labels || []).map(l => (typeof l === 'string' ? l : l.name)).filter(Boolean);
             if (!labels.includes(REQUIRED_LABEL)) return;
 
             // Only allow issue author
@@ -255,7 +255,7 @@ jobs:
 
             // Find latest incomplete sleep row (Sleep set, Wake empty), newest date first
             const findLatestIncompleteDateKey = () => {
-              const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
+              const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 :  -1));
               for (const k of keys) {
                 const e = map.get(k);
                 if (e && e.sleep && !e.wake) return k;
@@ -270,7 +270,7 @@ jobs:
 
             if (! parsed.explicitTime) {
               // /sleep or /wake
-              if (parsed.cmd === '/sleep') {
+              if (parsed. cmd === '/sleep') {
                 appliedDateKey = dateKeyForSleepEvent(eventUtc8);
                 targetStamp = eventStamp; // real time
               } else {
@@ -284,7 +284,7 @@ jobs:
                 appliedDateKey = dateKeyForSleepEvent(eventUtc8);
                 targetStamp = `${appliedDateKey} ${parsed.explicitTime}`; // dateKey is the "sleep night" date
               } else {
-                // /wake HH:MM:  prefer incomplete row, but date part should be "real wake day"
+                // /wake HH:MM: prefer incomplete row, but date part should be "real wake day"
                 appliedDateKey = findLatestIncompleteDateKey() || eventDateKey;
                 const wakeRealDay = eventDateKey;
                 targetStamp = `${wakeRealDay} ${parsed.explicitTime}`;
@@ -292,7 +292,13 @@ jobs:
             } else if (parsed.explicitDate && parsed.explicitTime) {
               // /sleep YYYY-MM-DD HH:MM backfill
               // /wake  YYYY-MM-DD HH:MM backfill
-              if (! parsed.isBackfill) return;
+              if (! parsed.isBackfill) {
+                await comment(owner, repo, issue_number,
+                  `@${commenter} ⚠️ 指定日期和时间修改记录时，必须在命令末尾加上 \`backfill\` 关键字。\n` +
+                  `正确格式：\`${parsed.cmd} ${parsed.explicitDate} ${parsed. explicitTime} backfill\``
+                );
+                return;
+              }
 
               appliedDateKey = parsed.explicitDate;
               targetStamp = `${parsed.explicitDate} ${parsed. explicitTime}`;
@@ -301,12 +307,18 @@ jobs:
               // Enforce 7-day window (inclusive)
               const todayKey = eventDateKey;
               const minAllowed = addDaysToUtc8DateKey(todayKey, -BACKFILL_MAX_DAYS);
-              if (minAllowed && (appliedDateKey < minAllowed || appliedDateKey > todayKey)) return;
+              if (minAllowed && (appliedDateKey < minAllowed || appliedDateKey > todayKey)) {
+                await comment(owner, repo, issue_number,
+                  `@${commenter} ⚠️ Backfill 仅允许最近 **${BACKFILL_MAX_DAYS}** 天（**${minAllowed}** ~ **${todayKey}**）。\n` +
+                  `你尝试修改的日期：**${appliedDateKey}**`
+                );
+                return;
+              }
             }
 
             if (! appliedDateKey || !targetStamp) return;
 
-            const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source:  '' };
+            const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration:  '', source: '' };
 
             // Enforce "only once per day" unless backfill
             if (parsed.cmd === '/sleep' && entry.sleep && source !== 'backfill') {
