@@ -301,9 +301,6 @@ jobs:
             }
 
             if (!appliedDateKey || !targetStamp) return;
-            await comment(owner, repo, issue_number,
-            `🐛 DEBUG:\n- cmd: \`${parsed.cmd}\`\n- appliedDateKey: \`${appliedDateKey}\`\n- targetStamp: \`${targetStamp}\`\n- eventStamp: \`${eventStamp}\`\n- existingSleep: \`${(map.get(appliedDateKey)?.sleep) || '(empty)'}\`\n- mapKeys: \`[${Array.from(map.keys()).join(', ')}]\`\n- issueBodyLength: ${(issue.body || '').length}\n- hasStartMark: ${(issue.body || '').includes('<!-- SLEEP_LOG_TABLE_START -->')}\n- hasEndMark: ${(issue.body || '').includes('<!-- SLEEP_LOG_TABLE_END -->')}`
-            );
 
             const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source: '' };
 
