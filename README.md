@@ -57,9 +57,3 @@
 - `/wake` 会优先填入“最近一次 sleep 已记录但 wake 为空”的那一行（保证“一次睡眠一行”）
 - **wake 记录为真实日期时间**（避免跨天时长计算出错）
 - 同一天的 Sleep/Wake 各只允许记录一次；如果是刚刚误操作，优先用 /undo（10 分钟内），否则用 backfill 修正。
-
-Dashboard 会定时扫描所有带 `sleep-log` 标签且处于 open 的 Issue，生成：
-- 今天（按 sleep dateKey）的所有人记录
-- 最近 7 天平均睡眠时长
-
-见：[`docs/dashboard.md`](docs/dashboard.md)
