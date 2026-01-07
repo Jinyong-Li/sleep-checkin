@@ -68,7 +68,6 @@ async function gh(pathname, { method = "GET", body, headers = {} } = {}) {
 
 // Fetch all open issues with label sleep-log (we will only use issue author as user identity).
 async function listOpenSleepLogIssues() {
-  // Prefer /issues endpoint with label filter (supports pagination).
   const perPage = 100;
   let page = 1;
   const items = [];
@@ -109,7 +108,9 @@ function extractSleepLogRowFromIssueBody(issueBody, ymd) {
     .filter(Boolean);
 
   // find header row
-  const headerIdx = lines.findIndex((l) => l.startsWith("| Date |") && l.includes("Sleep (UTC+8)") && l.includes("Wake (UTC+8)"));
+  const headerIdx = lines.findIndex(
+    (l) => l.startsWith("| Date |") && l.includes("Sleep (UTC+8)") && l.includes("Wake (UTC+8)"),
+  );
   if (headerIdx === -1) return null;
 
   // rows after header+separator
@@ -117,6 +118,7 @@ function extractSleepLogRowFromIssueBody(issueBody, ymd) {
 
   for (const line of rows) {
     if (!line.startsWith("|")) continue;
+
     // naive split by |, trim cells
     const cells = line
       .split("|")
@@ -135,6 +137,7 @@ function extractSleepLogRowFromIssueBody(issueBody, ymd) {
     // duration like "0h19m"
     const m = duration.match(/^(\d+)h(\d+)m$/);
     if (!m) return null;
+
     const minutes = Number(m[1]) * 60 + Number(m[2]);
     if (!Number.isFinite(minutes) || minutes <= 0) return null;
 
@@ -208,8 +211,12 @@ async function main() {
   }
 
   // Rankings (Top N)
+  const earliestSleep = topN(entries, (a, b) => compareTimeStrAsc(a.sleep, b.sleep), TOP_N);
   const latestSleep = topN(entries, (a, b) => compareTimeStrDesc(a.sleep, b.sleep), TOP_N);
+
   const earliestWake = topN(entries, (a, b) => compareTimeStrAsc(a.wake, b.wake), TOP_N);
+  const latestWake = topN(entries, (a, b) => compareTimeStrDesc(a.wake, b.wake), TOP_N);
+
   const longestSleep = topN(entries, (a, b) => b.minutes - a.minutes, TOP_N);
   const shortestSleep = topN(entries, (a, b) => a.minutes - b.minutes, TOP_N);
 
@@ -222,8 +229,13 @@ async function main() {
       open_sleep_log_issues: issues.length,
       complete_records: entries.length,
     },
+
+    earliest_sleep: earliestSleep,
     latest_sleep: latestSleep,
+
     earliest_wake: earliestWake,
+    latest_wake: latestWake,
+
     longest_sleep: longestSleep,
     shortest_sleep: shortestSleep,
   };
@@ -245,8 +257,10 @@ async function main() {
     "",
     "> 仅统计 open 的 `sleep-log` issue 用户；只统计完整记录（Sleep/Wake/Duration 都存在）；cutoff=04:00 (UTC+8)。",
     "",
+    fmtEntryLine("最早睡", pickFirst(earliestSleep)),
     fmtEntryLine("最晚睡", pickFirst(latestSleep)),
     fmtEntryLine("最早起", pickFirst(earliestWake)),
+    fmtEntryLine("最晚起", pickFirst(latestWake)),
     fmtEntryLine("睡得最长", pickFirst(longestSleep)),
     fmtEntryLine("睡得最短", pickFirst(shortestSleep)),
     "",
