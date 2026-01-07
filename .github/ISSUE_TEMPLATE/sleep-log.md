@@ -16,6 +16,7 @@ assignees: ''
 - `/wake YYYY-MM-DD HH:MM backfill` - 补记/修正（仅最近7天，且只能改更晚，且不能填写未来时间）
 - `/undo` - 撤销最近一次 sleep/wake 记录（仅限最近10分钟内）
 - `/rebuild` - 从事件日志重建表格（当你手动改坏表格或怀疑显示不对时使用）
+- `/archive` - 封存并关闭当前日志 issue（标题自动加上时间段），然后你可以新建一个新的日志继续记录
 
 > 创建后在评论区发送 `/sleep` 或 `/rebuild` 会自动启用 sleep-log（机器人会自动加 `sleep-log` 标签）。
 > 请不要手动给 issue 添加 `sleep-log` 标签（避免绕过“每人仅一个 open issue”的限制，导致记录分散）。
