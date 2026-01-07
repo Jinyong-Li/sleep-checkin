@@ -78,7 +78,7 @@
 
 ### 方式 B：纯 GitHub Issue
 1. 在仓库 **Issues** 使用模板创建你的 Sleep Log Issue（模板内含启用标记）
-2. 在该 Issue 下评论命���开始打卡（首次会自动启用并添加 `sleep-log` 标签）
+2. 在该 Issue 下评论命令开始打卡（首次会自动启用并添加 `sleep-log` 标签）
 
 ---
 
