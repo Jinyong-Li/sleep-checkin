@@ -293,6 +293,9 @@ jobs:
             }
 
             if (!appliedDateKey || !targetStamp) return;
+            await comment(owner, repo, issue_number,
+            `🐛 DEBUG:\n- cmd: \`${parsed.cmd}\`\n- appliedDateKey: \`${appliedDateKey}\`\n- targetStamp: \`${targetStamp}\`\n- eventStamp: \`${eventStamp}\`\n- existingSleep: \`${(map.get(appliedDateKey)?.sleep) || '(empty)'}\`\n- mapKeys: \`[${Array.from(map.keys()).join(', ')}]\``
+            );
 
             const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source: '' };
 
