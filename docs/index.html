@@ -92,7 +92,6 @@
         color: #d1d5db;
       }
 
-      /* optional: make details look nicer */
       details {
         border: 1px solid #1f2937;
         border-radius: 12px;
@@ -104,6 +103,28 @@
         user-select: none;
         font-weight: 700;
         color: #e5e7eb;
+      }
+
+      .help {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border: 1px dashed #374151;
+        border-radius: 12px;
+        background: #0b1020;
+      }
+      .help ul {
+        margin: 8px 0 0 18px;
+        padding: 0;
+      }
+      .help li {
+        margin: 6px 0;
+        line-height: 1.35;
+      }
+      code {
+        background: #0b1020;
+        border: 1px solid #1f2937;
+        padding: 0 6px;
+        border-radius: 8px;
       }
     </style>
   </head>
@@ -120,8 +141,9 @@
       <div class="card" id="setupCard">
         <div style="font-weight: 700; margin-bottom: 8px">设置</div>
         <div class="muted" style="margin-bottom: 10px">
-          这是一个 PWA（可添加到主屏幕）。登录后可一键在你的 sleep-log issue 下发表评论命令：/sleep /wake /undo
-          /archive /rebuild，并查看 bot 回复与表格。
+          这是一个 PWA（可添加到主屏幕）。登录后可一键在你的 sleep-log issue 下发表评论命令：
+          <code>/sleep</code> <code>/wake</code> <code>/sleep … backfill</code> <code>/wake … backfill</code>
+          <code>/undo</code> <code>/archive</code> <code>/rebuild</code>，并查看 bot 回复与表格。
         </div>
 
         <details>
@@ -151,7 +173,16 @@
           <div id="issueLink"></div>
         </div>
 
-        <div style="margin-top: 10px">
+        <!-- shown only when user has no open issue -->
+        <div id="noIssueActions" style="display: none; margin-top: 10px">
+          <button id="createIssueBtn" class="secondary">Create Issue</button>
+          <div class="muted" style="margin-top: 8px">
+            说明：将自动创建一个新的 Sleep Log Issue，并自动发送 <code>/rebuild</code> 来启用机器人与表格（通常 1~2 秒内会更新）。
+          </div>
+        </div>
+
+        <!-- shown only when user has an open issue -->
+        <div id="hasIssueActions" style="display: none; margin-top: 10px">
           <button data-cmd="/sleep">Sleep</button>
           <button data-cmd="/wake">Wake</button>
           <button data-cmd="/undo" class="danger">Undo</button>
@@ -163,10 +194,24 @@
           <button id="backfillWakeBtn" class="secondary">Backfill Wake…</button>
 
           <button id="refreshBtn" class="secondary">Refresh</button>
-        </div>
 
-        <div class="muted" style="margin-top: 8px">
-          提示：/archive 会关闭当前 issue（不可用 /undo 撤销）。误操作可手动 Reopen。
+          <div class="help">
+            <div style="font-weight: 700">按钮说明（中文）</div>
+            <ul class="muted">
+              <li><b>Sleep</b>：发送 <code>/sleep</code>，记录“现在”为入睡时间。</li>
+              <li><b>Wake</b>：发送 <code>/wake</code>，记录“现在”为起床时间。</li>
+              <li><b>Backfill Sleep…</b>：补记入睡时间，会发送 <code>/sleep YYYY-MM-DD HH:MM backfill</code>（默认当前北京时间，可手动改）。</li>
+              <li><b>Backfill Wake…</b>：补记起床时间，会发送 <code>/wake YYYY-MM-DD HH:MM backfill</code>（默认当前北京时间，可手动改）。</li>
+              <li><b>Undo</b>：发送 <code>/undo</code>，撤销最近一次 sleep/wake（仅限最近 10 分钟内）。</li>
+              <li><b>Rebuild</b>：发送 <code>/rebuild</code>，从事件日志重建表格（当你怀疑表格显示不对/被手动改坏时使用）。</li>
+              <li><b>Archive</b>：发送 <code>/archive</code>，封存并关闭当前日志 issue（之后可新建新的日志）。</li>
+              <li><b>Refresh</b>：重新拉取最新评论与 Issue Body（表格），用于查看 bot 更新结果。</li>
+            </ul>
+          </div>
+
+          <div class="muted" style="margin-top: 10px">
+            提示：<code>/archive</code> 会关闭当前 issue（不可用 <code>/undo</code> 撤销）。误操作可手动 Reopen。
+          </div>
         </div>
       </div>
 
@@ -215,7 +260,7 @@
         $("authState").textContent = text;
       }
 
-      // ---- time helpers (Beijing, ASCII-only) ----
+      // ---- time helpers (Beijing, ASCII-only to avoid unreadable glyphs) ----
       function pad2(n) {
         return String(n).padStart(2, "0");
       }
@@ -243,6 +288,8 @@
         return `${y}-${m}-${day} ${hh}:${mm}:${ss} (UTC+8)`;
       }
 
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
       async function api(path, opts = {}) {
         const res = await fetch(workerBase + path, {
           ...opts,
@@ -264,13 +311,21 @@
         return sid;
       }
 
+      function setHasIssueUI(hasIssue) {
+        $("noIssueActions").style.display = hasIssue ? "none" : "block";
+        $("hasIssueActions").style.display = hasIssue ? "block" : "none";
+
+        $("commentsCard").style.display = hasIssue ? "block" : "none";
+        $("tableCard").style.display = hasIssue ? "block" : "none";
+      }
+
       async function loadMeAndIssue() {
         const sid = await ensureSession();
         if (!sid) {
           setAuthState("Not logged in");
           $("issueCard").style.display = "none";
-          $("commentsCard").style.display = "none";
-          $("tableCard").style.display = "none";
+          set indicated = false;
+          setHasIssueUI(false);
           return;
         }
 
@@ -279,31 +334,29 @@
         setAuthState(`@${me.login}`);
 
         const issue = await api(`/find-issue?session=${encodeURIComponent(sid)}`);
+
+        $("issueCard").style.display = "block";
+
         if (!issue || !issue.number) {
-          $("issueCard").style.display = "block";
           $("issueStatus").textContent = "未找到 open 的 sleep-log issue";
           $("issueLink").innerHTML = `
-            <div class="muted">请先在 GitHub 用模板创建你的 Sleep Log issue，并确保它 open 且带 label: sleep-log。</div>
-            <div class="muted">创建后点 Refresh。</div>
+            <div class="muted">你还没有 Sleep Log issue。</div>
+            <div class="muted">你可以点下面按钮自动创建（推荐），或者去 GitHub 用模板手动创建。</div>
           `;
-          $("commentsCard").style.display = "none";
-          $("tableCard").style.display = "none";
+          setHasIssueUI(false);
           return;
         }
 
-        $("issueCard").style.display = "block";
         $("issueStatus").textContent = `#${issue.number}`;
         $("issueLink").innerHTML = `<a target="_blank" rel="noreferrer" href="${issue.html_url}">${issue.title}</a>`;
 
+        setHasIssueUI(true);
         await refreshIssueViews(issue.number);
       }
 
       async function refreshIssueViews(issueNumber) {
         const sid = await ensureSession();
         const data = await api(`/issue-data?session=${encodeURIComponent(sid)}&number=${issueNumber}&_=${Date.now()}`);
-
-        $("commentsCard").style.display = "block";
-        $("tableCard").style.display = "block";
 
         $("commentsMeta").textContent = `${data.comments.length} comments (showing latest 20)`;
         $("commentsPre").textContent = data.comments
@@ -332,7 +385,44 @@
           body: JSON.stringify({ number: issue.number, body: cmd }),
         });
 
+        // wait for bot to update a bit, then refresh
+        await sleep(1200);
         await refreshIssueViews(issue.number);
+      }
+
+      async function createSleepLogIssue() {
+        const sid = await ensureSession();
+        if (!sid) return alert("请先登录");
+
+        $("createIssueBtn").disabled = true;
+        $("createIssueBtn").textContent = "Creating…";
+        try {
+          const created = await api(`/create-issue?session=${encodeURIComponent(sid)}`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+
+          if (!created?.number) {
+            alert("创建失败：未返回 issue number");
+            return;
+          }
+
+          $("issueStatus").textContent = `#${created.number}`;
+          $("issueLink").innerHTML = `<a target="_blank" rel="noreferrer" href="${created.html_url}">${created.title}</a>`;
+
+          setHasIssueUI(true);
+
+          // Wait a bit for /rebuild to be processed, then refresh a couple of times.
+          await sleep(1200);
+          await refreshIssueViews(created.number);
+          await sleep(1200);
+          await refreshIssueViews(created.number);
+        } catch (err) {
+          alert(err.message || String(err));
+        } finally {
+          $("createIssueBtn").disabled = false;
+          $("createIssueBtn").textContent = "Create Issue";
+        }
       }
 
       $("loginBtn").addEventListener("click", () => {
@@ -348,6 +438,10 @@
 
       $("refreshBtn").addEventListener("click", async () => {
         await loadMeAndIssue();
+      });
+
+      $("createIssueBtn").addEventListener("click", async () => {
+        await createSleepLogIssue();
       });
 
       $("backfillSleepBtn").addEventListener("click", async () => {
