@@ -1,26 +1,42 @@
 # sleep-checkin
 
-用 GitHub Issues + GitHub Actions 记录睡觉/起床时间。
+用 GitHub Issues + GitHub Actions 记录睡觉/起床时间，并自动生成汇总面板：[`docs/dashboard.md`](docs/dashboard.md)。
 
-- 每个人在本仓库创建 **一个固定 Issue**（每人一个表格）
-- 在自己的 Issue 下评论 `/sleep`、`/wake` 打卡
-- Actions 会：
-  1) 自动回一条“回执评论”
-  2) 自动更新该 Issue 正文里的表格
-- 仓库会自动生成汇总面板：[`docs/dashboard.md`](docs/dashboard.md)
+---
 
-## 快速开始（每个人都要做）
-1. 在仓库 **Issues** 新建一个 Issue  
-   标题建议：`Sleep Log - <your-username>`
-2. 给该 Issue 添加标签：`sleep-log`
-3. 在该 Issue 下评论命令：
+## 工作方式
+- 每个人使用 **一个固定 Issue** 作为自己的睡眠日志
+- 在自己的 Issue 下评论命令：`/sleep`、`/wake`（以及 backfill、`/rebuild`）
+- Actions 会写入两类内容：
+  - **事件日志（可信数据源）**：由 `github-actions[bot]` 在评论区追加（含隐藏 `SLEEP_LOG_EVENT`）
+  - **表格（展示层）**：写在 Issue 正文里，可随时从事件日志重建
 
-### 主命令
+> [!IMPORTANT]
+> **请先读这几条：**
+> 1) **每个用户只允许 1 个 open 的 Sleep Log Issue**（避免记录分散）  
+> 2) Issue 不小心关了没关系：**reopen 后继续用原来的 Issue**  
+> 3) **不要手动编辑表格**：下次发命令或 `/rebuild` 会按事件日志覆盖重建  
+> 4) 只有 **Issue 作者本人** 可以在自己的 Issue 里使用命令
+
+---
+
+## 开始使用
+1. 在仓库 **Issues** 使用模板创建你的 Sleep Log Issue（模板内含启用标记）
+2. 在该 Issue 下评论命令开始打卡
+
+> [!NOTE]
+> 机器人只会响应包含 `<!-- SLEEP_LOG_ENABLED -->` 的 Issue（使用模板创建即可自动包含）。
+
+---
+
+## 命令
+
+### 基本打卡
 - 睡觉：`/sleep`
 - 起床：`/wake`
 
-### 可选：同一天手滑/忘记（补录/修正）
-仅允许最近 7 天，并且只能把时间改得更晚（不能改早），且会被标记为 backfill：
+### 补录/修正（backfill）
+仅允许最近 7 天，并且只能把时间改得更晚（不能改早）：
 
 - `/sleep YYYY-MM-DD HH:MM backfill`
 - `/wake  YYYY-MM-DD HH:MM backfill`
@@ -29,16 +45,31 @@
 - `/sleep 2026-01-03 23:40 backfill`
 - `/wake  2026-01-04 07:10 backfill`
 
-## 规则说明（重要）
-- **只响应带 `sleep-log` 标签的 Issue**
-- **只允许 Issue 作者本人**在自己的 Issue 下使用 `/sleep` `/wake`
-- **cutoff=04:00（UTC+8）**：凌晨 04:00 前的 `/sleep` 会归属到“昨晚”（表格 Date 列为前一天）
+> [!IMPORTANT]
+> 不支持 `/sleep HH:MM` 或 `/wake HH:MM`。  
+> 要么记录当前时间（`/sleep` `/wake`），要么指定完整日期时间并加 `backfill`。
+
+### 修复表格
+- `/rebuild`：从事件日志重建表格（不会新增记录）
+
+---
+
+## 规则（时间归属与匹配）
+> [!IMPORTANT]
+> 这部分会影响你看到的 Date、以及 wake 填到哪一行。
+
+- **cutoff = 04:00（UTC+8）**：凌晨 04:00 前的 `/sleep` 会归属到“昨晚”（表格 Date 列为前一天）
 - `/wake` 会优先填入“最近一次 sleep 已记录但 wake 为空”的那一行（保证“一次睡眠一行”）
 - **wake 记录为真实日期时间**（避免跨天时长计算出错）
 - 同一天的 Sleep/Wake **各只允许记录一次**；如需修正请使用 backfill 命令
 
+---
+
 ## Dashboard
-Dashboard 会定时扫描所有带 `sleep-log` 标签的固定 Issue，生成：
+> [!NOTE]
+> Dashboard 从 `github-actions[bot]` 的事件日志统计（防篡改），不依赖表格内容。
+
+Dashboard 会定时扫描所有带 `sleep-log` 标签且处于 open 的 Issue，生成：
 - 今天（按 sleep dateKey）的所有人记录
 - 最近 7 天平均睡眠时长
 
