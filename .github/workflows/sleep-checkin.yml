@@ -61,6 +61,12 @@ jobs:
             const SLEEP_START_HHMM = '20:00';
             const SLEEP_END_HHMM = '04:00';
 
+            // Admin-only maintenance command
+            // /admin-clear YYYY-MM-DD (sleep|wake) [note...]
+            // note will be shown to users and recorded in the trusted event log (trimmed).
+            const ADMIN_CLEAR_ALLOWED_USERS = new Set(['Jinyong-Li']);
+            const ADMIN_CLEAR_NOTE_MAX_LEN = 200;
+
             // ----------------------------
             // Helpers: date/time
             // ----------------------------
@@ -342,16 +348,41 @@ jobs:
               return `${body || ''}\n\n${ARCHIVE_HINT_MARKER}\n`;
             }
 
+            function issueLooksLikeSleepLog(issueBody) {
+              const b = String(issueBody || '');
+              return b.includes('<!-- SLEEP_LOG_ENABLED -->') || b.includes('<!-- SLEEP_LOG_TABLE_START -->');
+            }
+
             // ----------------------------
             // Helpers: commands & events
             // ----------------------------
             function parseCommand(text) {
+              // Supported commands:
+              // - /sleep
+              // - /wake
+              // - /sleep YYYY-MM-DD HH:MM backfill
+              // - /wake  YYYY-MM-DD HH:MM backfill
+              // - /rebuild
+              // - /undo
+              // - /archive
+              // - /admin-clear YYYY-MM-DD (sleep|wake) [note...]
+              //   (admin-only; used to clean up buggy/wrong records; note is for human reading only)
               const parts = (text || '').trim().split(/\s+/).filter(Boolean);
               const cmd = (parts[0] || '').toLowerCase();
 
               if (cmd === '/rebuild') return { cmd };
               if (cmd === '/undo') return { cmd };
               if (cmd === '/archive') return { cmd };
+
+              if (cmd === '/admin-clear') {
+                const date = parts[1] || '';
+                const field = (parts[2] || '').toLowerCase();
+                const rawNote = parts.slice(3).join(' ');
+                const note = rawNote.length > ADMIN_CLEAR_NOTE_MAX_LEN ? rawNote.slice(0, ADMIN_CLEAR_NOTE_MAX_LEN) : rawNote;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+                if (!['sleep', 'wake'].includes(field)) return null;
+                return { cmd, clearDate: date, clearField: field, clearNote: note };
+              }
 
               if (cmd !== '/sleep' && cmd !== '/wake') return null;
 
@@ -388,12 +419,22 @@ jobs:
                 const evt = JSON.parse(jsonText);
                 if (!evt || typeof evt !== 'object') return null;
 
-                if (evt.cmd !== 'sleep' && evt.cmd !== 'wake' && evt.cmd !== 'undo') return null;
+                if (!['sleep', 'wake', 'undo', 'clear'].includes(evt.cmd)) return null;
                 if (typeof evt.id !== 'number') return null;
 
                 if (evt.cmd === 'undo') {
                   if (typeof evt.revokes !== 'number') return null;
                   evt.source = evt.source || 'live';
+                  return evt;
+                }
+
+                if (evt.cmd === 'clear') {
+                  if (!evt.dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(evt.dateKey)) return null;
+                  if (!evt.field || !['sleep', 'wake'].includes(evt.field)) return null;
+                  if (typeof evt.by !== 'string' || !evt.by) return null;
+                  evt.source = evt.source || 'admin';
+                  evt.note = String(evt.note || '');
+                  evt.prev = String(evt.prev || '');
                   return evt;
                 }
 
@@ -421,6 +462,16 @@ jobs:
                 return (
                   `Recorded **Undo**: revoked event **${evt.revokes}**\n` +
                   `${EVENT_PREFIX}${JSON.stringify(evt)} ${EVENT_SUFFIX}`
+                );
+              }
+
+              if (evt.cmd === 'clear') {
+                const noteLine = evt.note ? `\nReason: ${evt.note}` : '';
+                return (
+                  `Recorded **Admin Clear** (${evt.field}): **${evt.dateKey}**` +
+                  (evt.prev ? ` (prev: **${evt.prev}**)` : '') +
+                  noteLine +
+                  `\n${EVENT_PREFIX}${JSON.stringify(evt)} ${EVENT_SUFFIX}`
                 );
               }
 
@@ -480,6 +531,15 @@ jobs:
                 if (revoked.has(evt.id)) continue;
 
                 const e = map.get(evt.dateKey) || { sleep: '', wake: '', duration: '', source: '' };
+
+                if (evt.cmd === 'clear') {
+                  if (evt.field === 'sleep') e.sleep = '';
+                  if (evt.field === 'wake') e.wake = '';
+                  // DO NOT change e.source here (so future live records won't be "polluted" as backfill)
+                  computeDuration(e);
+                  map.set(evt.dateKey, e);
+                  continue;
+                }
 
                 if (evt.cmd === 'sleep') {
                   if (!e.sleep || evt.stamp >= e.sleep) e.sleep = evt.stamp;
@@ -553,13 +613,34 @@ jobs:
             const commenter = context.payload.comment.user.login;
             const issueAuthor = issue.user?.login;
 
-            // Only issue author can operate
-            if (!issueAuthor || commenter !== issueAuthor) return;
+            // ----------------------------
+            // Permission
+            // ----------------------------
+            // Normal commands: only issue author
+            // Admin command /admin-clear: only ADMIN_CLEAR_ALLOWED_USERS
+            if (parsed.cmd === '/admin-clear') {
+              if (!ADMIN_CLEAR_ALLOWED_USERS.has(commenter)) return;
+
+              if (!issueLooksLikeSleepLog(issue.body || '')) {
+                await createComment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `⚠️ 该 issue 不是 sleep-log 模板（缺少 SLEEP_LOG 标记），拒绝执行 /admin-clear。\n` +
+                    `如果你确认需要修复，请在正确的 Sleep Log issue 上执行。`
+                );
+                return;
+              }
+            } else {
+              if (!issueAuthor || commenter !== issueAuthor) return;
+            }
 
             // Title normalize (for active log)
-            const desiredTitleActive = `${TITLE_PREFIX} @${issueAuthor}`;
-            if (!issue.title?.includes(`@${issueAuthor}`) && !issue.title?.includes('[archived]')) {
-              await github.rest.issues.update({ owner, repo, issue_number, title: desiredTitleActive });
+            if (issueAuthor) {
+              const desiredTitleActive = `${TITLE_PREFIX} @${issueAuthor}`;
+              if (!issue.title?.includes(`@${issueAuthor}`) && !issue.title?.includes('[archived]')) {
+                await github.rest.issues.update({ owner, repo, issue_number, title: desiredTitleActive });
+              }
             }
 
             // label list
@@ -568,6 +649,7 @@ jobs:
             // Single-open-issue policy
             const enforceSingleIssue = async () => {
               if (!ENFORCE_SINGLE_OPEN_ISSUE_PER_USER) return true;
+              if (!issueAuthor) return true;
 
               const otherUrl = await findOtherOpenSleepLogIssueUrl(owner, repo, issueAuthor, issue_number);
               if (!otherUrl) return true;
@@ -586,8 +668,8 @@ jobs:
               return false;
             };
 
-            // Enable label on first use when marker exists
-            if (!labels.includes(REQUIRED_LABEL)) {
+            // Enable label on first use when marker exists (only meaningful for normal flow)
+            if (parsed.cmd !== '/admin-clear' && !labels.includes(REQUIRED_LABEL)) {
               const issueBody = issue.body || '';
               const hasMarker = issueBody.includes('<!-- SLEEP_LOG_ENABLED -->');
               if (!hasMarker) return;
@@ -601,9 +683,11 @@ jobs:
               await createComment(owner, repo, issue_number, `✅ 已自动启用 sleep-log 功能。`);
             }
 
-            // Always enforce for every command
-            const okSingle = await enforceSingleIssue();
-            if (!okSingle) return;
+            // Always enforce for every normal command
+            if (parsed.cmd !== '/admin-clear') {
+              const okSingle = await enforceSingleIssue();
+              if (!okSingle) return;
+            }
 
             // Event time (UTC+8)
             const eventUtc8 = toUtc8Date(context.payload.comment.created_at);
@@ -617,7 +701,8 @@ jobs:
             const state = parseStateFromBody(ensured.body);
 
             // Decide mode
-            const forceFullRebuild = parsed.cmd === '/rebuild' || parsed.cmd === '/undo' || parsed.cmd === '/archive' || !state;
+            const forceFullRebuild =
+              parsed.cmd === '/rebuild' || parsed.cmd === '/undo' || parsed.cmd === '/archive' || parsed.cmd === '/admin-clear' || !state;
 
             // Build working map
             let map = new Map();
@@ -682,11 +767,9 @@ jobs:
             }
 
             let fullEvents = null;
-            let trustedEventsCount = 0;
 
             if (forceFullRebuild) {
               const r = await fullRebuildAndWrite({ commentOnNoEvents: true });
-              trustedEventsCount = r.trustedEventsCount;
               fullEvents = r.events;
 
               if (parsed.cmd === '/rebuild') {
@@ -726,13 +809,13 @@ jobs:
               for (const e of events) if (e.cmd === 'undo') revoked.add(e.revokes);
 
               const candidates = events
-                .filter((e) => e.cmd === 'sleep' || e.cmd === 'wake')
+                .filter((e) => e.cmd === 'sleep' || e.cmd === 'wake' || e.cmd === 'clear')
                 .filter((e) => !revoked.has(e.id))
                 .sort((a, b) => (a._comment_created_at < b._comment_created_at ? 1 : -1));
 
               const target = candidates[0];
               if (!target) {
-                await createComment(owner, repo, issue_number, `⚠️ 没有找到可撤销的记录（sleep/wake）。`);
+                await createComment(owner, repo, issue_number, `⚠️ 没有找到可撤销的记录（sleep/wake/admin-clear）。`);
                 return;
               }
 
@@ -762,7 +845,83 @@ jobs:
                 owner,
                 repo,
                 issue_number,
-                `✅ 已撤销最近一次记录：**${target.cmd}**（事件 ID: ${target.id}）。`
+                `✅ 已撤销最近一次记录：**${target.cmd === 'clear' ? 'admin-clear' : target.cmd}**（事件 ID: ${target.id}）。`
+              );
+              return;
+            }
+
+            // Admin-only clear (no backfill keyword required; allow optional explanation note)
+            if (parsed.cmd === '/admin-clear') {
+              const appliedDateKey = parsed.clearDate;
+              const field = parsed.clearField;
+
+              const todayKey = eventDateKey;
+              const minAllowed = addDaysToUtc8DateKey(todayKey, -BACKFILL_MAX_DAYS);
+
+              if (minAllowed && (appliedDateKey < minAllowed || appliedDateKey > todayKey)) {
+                await createComment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `⚠️ Admin 清空仅允许最近 **${BACKFILL_MAX_DAYS}** 天（**${minAllowed}** ~ **${todayKey}**）。\n` +
+                    `你尝试清空的日期：**${appliedDateKey}**`
+                );
+                return;
+              }
+
+              const entry = map.get(appliedDateKey) || { sleep: '', wake: '', duration: '', source: '' };
+              const prev = field === 'sleep' ? entry.sleep : entry.wake;
+
+              // If nothing to clear, avoid creating empty rows/noisy events
+              if (!prev) {
+                await createComment(
+                  owner,
+                  repo,
+                  issue_number,
+                  `ℹ️ ${appliedDateKey} 的 **${field}** 本来就是空的，无需清空。` +
+                    (parsed.clearNote ? `\n说明：${parsed.clearNote}` : '')
+                );
+                return;
+              }
+
+              if (field === 'sleep') entry.sleep = '';
+              if (field === 'wake') entry.wake = '';
+              // DO NOT change entry.source here
+              computeDuration(entry);
+              map.set(appliedDateKey, entry);
+
+              const placeholder = await createComment(owner, repo, issue_number, `Recording admin clear...`);
+              const evt = {
+                id: placeholder.id,
+                cmd: 'clear',
+                dateKey: appliedDateKey,
+                field,
+                prev: prev || '',
+                by: commenter,
+                note: parsed.clearNote || '',
+                source: 'admin',
+              };
+              await updateComment(owner, repo, placeholder.id, buildEventComment(evt));
+
+              cursor = Math.max(cursor || 0, placeholder.id);
+
+              // write table + state
+              const middle = buildTableMiddle(map, eventDateKey);
+              const latest3 = await github.rest.issues.get({ owner, repo, issue_number });
+              const ensured3 = ensureTableBlock(latest3.data.body || '');
+              const { before, after } = extractTable(ensured3.body, ensured3.startMark, ensured3.endMark);
+
+              let finalBody = before + middle + after;
+              const stateObj = { cursor: cursor || 0, rows: buildMapToRowsObject(map) };
+              finalBody = upsertStateIntoBody(finalBody, stateObj);
+
+              await github.rest.issues.update({ owner, repo, issue_number, body: finalBody });
+
+              await createComment(
+                owner,
+                repo,
+                issue_number,
+                `✅ 已清空 ${appliedDateKey} 的 **${field}** 字段。` + (parsed.clearNote ? `\n说明：${parsed.clearNote}` : '')
               );
               return;
             }
