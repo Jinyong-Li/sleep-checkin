@@ -28,7 +28,7 @@ jobs:
             const BACKFILL_KEYWORD = 'backfill';
             const BACKFILL_MAX_DAYS = 7;
 
-            const UNDO_MAX_MINUTES = 10;
+            const UNDO_MAX_MINUTES = 100;
 
             const RECENT_DAYS = 30;
 
