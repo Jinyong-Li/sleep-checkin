@@ -7,159 +7,291 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#111827" />
     <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #111827;
+        --panel2: #0f172a;
+        --border: #1f2937;
+        --muted: #9ca3af;
+        --text: #e5e7eb;
+        --accent: #2563eb;
+        --accent2: #7c3aed;
+        --danger: #b91c1c;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        --radius: 14px;
+      }
+
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "Noto Sans", "PingFang SC",
           "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
         margin: 0;
-        background: #0b1020;
-        color: #e5e7eb;
+        background: radial-gradient(1200px 600px at 20% 10%, rgba(37, 99, 235, 0.16), transparent 55%),
+          radial-gradient(900px 500px at 80% 0%, rgba(124, 58, 237, 0.12), transparent 60%), var(--bg);
+        color: var(--text);
       }
+
       header {
-        padding: 16px;
-        background: #111827;
+        padding: 14px 16px;
+        background: rgba(17, 24, 39, 0.78);
+        backdrop-filter: blur(10px);
         position: sticky;
         top: 0;
         z-index: 10;
+        border-bottom: 1px solid rgba(31, 41, 55, 0.6);
       }
+
       main {
-        padding: 16px;
-        max-width: 900px;
+        padding: 18px 16px 40px;
+        max-width: 980px;
         margin: 0 auto;
       }
+
       .card {
-        background: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 12px;
-        padding: 12px;
-        margin: 12px 0;
+        background: linear-gradient(180deg, rgba(17, 24, 39, 0.92), rgba(17, 24, 39, 0.84));
+        border: 1px solid rgba(31, 41, 55, 0.85);
+        border-radius: var(--radius);
+        padding: 14px;
+        margin: 14px 0;
+        box-shadow: var(--shadow);
       }
+
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+
       button {
-        background: #2563eb;
+        background: linear-gradient(180deg, rgba(37, 99, 235, 1), rgba(37, 99, 235, 0.85));
         color: white;
         border: 0;
         padding: 10px 12px;
-        border-radius: 10px;
+        border-radius: 12px;
         font-size: 14px;
-        margin: 6px 6px 6px 0;
+        margin: 6px 8px 6px 0;
         cursor: pointer;
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+        transition: transform 0.06s ease, filter 0.12s ease;
       }
+
+      button:active {
+        transform: translateY(1px);
+        filter: brightness(0.98);
+      }
+
       button.secondary {
-        background: #374151;
+        background: linear-gradient(180deg, rgba(55, 65, 81, 1), rgba(55, 65, 81, 0.85));
+        box-shadow: 0 8px 18px rgba(17, 24, 39, 0.35);
       }
+
       button.danger {
-        background: #b91c1c;
+        background: linear-gradient(180deg, rgba(185, 28, 28, 1), rgba(185, 28, 28, 0.85));
+        box-shadow: 0 8px 18px rgba(185, 28, 28, 0.22);
       }
+
       button:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+        box-shadow: none;
       }
+
       input {
         width: 100%;
         padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #374151;
-        background: #0b1020;
-        color: #e5e7eb;
+        border-radius: 12px;
+        border: 1px solid rgba(55, 65, 81, 0.85);
+        background: rgba(11, 16, 32, 0.9);
+        color: var(--text);
+        outline: none;
       }
+
       a {
         color: #93c5fd;
         text-decoration: none;
       }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
       pre {
         white-space: pre-wrap;
         word-break: break-word;
-        background: #0b1020;
-        color: #e5e7eb;
-        border: 1px solid #1f2937;
-        padding: 10px;
-        border-radius: 10px;
+        background: rgba(11, 16, 32, 0.9);
+        color: var(--text);
+        border: 1px solid rgba(31, 41, 55, 0.9);
+        padding: 12px;
+        border-radius: 12px;
+        overflow: auto;
       }
+
       .row {
         display: flex;
         gap: 12px;
         flex-wrap: wrap;
         align-items: center;
       }
+
       .muted {
-        color: #9ca3af;
+        color: var(--muted);
       }
+
       .pill {
-        display: inline-block;
-        padding: 2px 8px;
-        border: 1px solid #374151;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 10px;
+        border: 1px solid rgba(55, 65, 81, 0.9);
         border-radius: 999px;
         font-size: 12px;
         color: #d1d5db;
+        background: rgba(15, 23, 42, 0.75);
+      }
+
+      .pill::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(34, 197, 94, 0.8);
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
       }
 
       details {
-        border: 1px solid #1f2937;
-        border-radius: 12px;
+        border: 1px solid rgba(31, 41, 55, 0.9);
+        border-radius: 14px;
         padding: 10px 12px;
-        background: #0b1020;
+        background: rgba(11, 16, 32, 0.75);
       }
+
       details > summary {
         cursor: pointer;
         user-select: none;
         font-weight: 700;
-        color: #e5e7eb;
+        color: var(--text);
       }
 
       .help {
         margin-top: 10px;
-        padding: 10px 12px;
-        border: 1px dashed #374151;
-        border-radius: 12px;
-        background: #0b1020;
+        padding: 12px 12px;
+        border: 1px dashed rgba(55, 65, 81, 0.9);
+        border-radius: 14px;
+        background: rgba(11, 16, 32, 0.75);
       }
+
       .help ul {
         margin: 8px 0 0 18px;
         padding: 0;
       }
+
       .help li {
         margin: 6px 0;
         line-height: 1.35;
       }
+
       code {
-        background: #0b1020;
-        border: 1px solid #1f2937;
+        background: rgba(11, 16, 32, 0.9);
+        border: 1px solid rgba(31, 41, 55, 0.9);
         padding: 0 6px;
-        border-radius: 8px;
+        border-radius: 9px;
       }
 
+      /* Leaderboard table */
       table.lb {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 8px;
+        margin-top: 10px;
         font-size: 14px;
+        overflow: hidden;
+        border-radius: 12px;
       }
+
+      table.lb thead th {
+        position: sticky;
+        top: 0;
+        background: rgba(15, 23, 42, 0.92);
+        border-bottom: 1px solid rgba(31, 41, 55, 0.9);
+      }
+
       table.lb th,
       table.lb td {
-        border-bottom: 1px solid #1f2937;
-        padding: 8px 6px;
+        border-bottom: 1px solid rgba(31, 41, 55, 0.9);
+        padding: 10px 8px;
         text-align: left;
         vertical-align: top;
       }
-      table.lb th {
-        color: #d1d5db;
-        font-weight: 700;
+
+      table.lb tr:hover td {
+        background: rgba(37, 99, 235, 0.06);
       }
+
       .lb-title {
-        font-weight: 700;
+        font-weight: 800;
       }
+
       .lb-sub {
-        color: #9ca3af;
+        color: var(--muted);
         font-size: 12px;
       }
+
       .mono {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+      }
+
+      /* Rendered table block */
+      #tableHtml {
+        margin-top: 10px;
+        background: rgba(11, 16, 32, 0.9);
+        border: 1px solid rgba(31, 41, 55, 0.9);
+        padding: 12px;
+        border-radius: 12px;
+        overflow-x: auto;
+      }
+
+      #tableHtml h1,
+      #tableHtml h2,
+      #tableHtml h3 {
+        margin: 12px 0 8px;
+      }
+
+      #tableHtml table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        overflow: hidden;
+        border-radius: 12px;
+      }
+
+      #tableHtml th,
+      #tableHtml td {
+        border: 1px solid rgba(31, 41, 55, 0.9);
+        padding: 8px 10px;
+        vertical-align: top;
+      }
+
+      #tableHtml th {
+        background: rgba(17, 24, 39, 0.9);
+        color: #d1d5db;
+        font-weight: 800;
+      }
+
+      #tableHtml tr:nth-child(even) td {
+        background: rgba(17, 24, 39, 0.35);
+      }
+
+      #tableHtml tr:hover td {
+        background: rgba(124, 58, 237, 0.08);
+      }
+
+      #tableHtml details {
+        margin-top: 10px;
       }
     </style>
   </head>
   <body>
     <header>
       <div class="row">
-        <div style="font-weight: 700">Sleep Check-in</div>
+        <div style="font-weight: 800; letter-spacing: 0.2px">Sleep Check-in</div>
         <div class="pill" id="repoPill"></div>
         <div style="margin-left: auto" class="muted" id="authState">Not logged in</div>
       </div>
@@ -185,7 +317,7 @@
       </div>
 
       <div class="card" id="setupCard">
-        <div style="font-weight: 700; margin-bottom: 8px">设置</div>
+        <div style="font-weight: 800; margin-bottom: 8px">设置</div>
         <div class="muted" style="margin-bottom: 10px">
           这是一个 PWA（可添加到主屏幕）。登录后可一键在你的 sleep-log issue 下发表评论命令：
           <code>/sleep</code> <code>/wake</code> <code>/sleep … backfill</code> <code>/wake … backfill</code>
@@ -212,7 +344,7 @@
 
       <div class="card" id="issueCard" style="display: none">
         <div class="row">
-          <div style="font-weight: 700">你的 Sleep Log Issue</div>
+          <div style="font-weight: 800">你的 Sleep Log Issue</div>
           <div class="muted" id="issueStatus"></div>
         </div>
         <div style="margin-top: 8px">
@@ -240,12 +372,18 @@
           <button id="refreshBtn" class="secondary">Refresh</button>
 
           <div class="help">
-            <div style="font-weight: 700">按钮说明（中文）</div>
+            <div style="font-weight: 800">按钮说明（中文）</div>
             <ul class="muted">
               <li><b>Sleep</b>：发送 <code>/sleep</code>，记录“现在”为入睡时间。</li>
               <li><b>Wake</b>：发送 <code>/wake</code>，记录“现在”为起床时间。</li>
-              <li><b>Backfill Sleep…</b>：补记入睡时间，会发送 <code>/sleep YYYY-MM-DD HH:MM backfill</code>（默认当前北京时间，可手动改）。</li>
-              <li><b>Backfill Wake…</b>：补记起床时间，会发送 <code>/wake YYYY-MM-DD HH:MM backfill</code>（默认当前北京时间，可手动改）。</li>
+              <li>
+                <b>Backfill Sleep…</b>：补记入睡时间，会发送 <code>/sleep YYYY-MM-DD HH:MM backfill</code>
+                （默认当前北京时间，可手动改）。
+              </li>
+              <li>
+                <b>Backfill Wake…</b>：补记起床时间，会发送 <code>/wake YYYY-MM-DD HH:MM backfill</code>
+                （默认当前北京时间，可手动改）。
+              </li>
               <li><b>Undo</b>：发送 <code>/undo</code>，撤销最近一次 sleep/wake（仅限最近 10 分钟内）。</li>
               <li><b>Rebuild</b>：发送 <code>/rebuild</code>，从事件日志重建表格（当你怀疑表格显示不对/被手动改坏时使用）。</li>
               <li><b>Archive</b>：发送 <code>/archive</code>，封存并关闭当前日志 issue（之后可新建新的日志）。</li>
@@ -261,7 +399,7 @@
 
       <div class="card" id="commentsCard" style="display: none">
         <div class="row">
-          <div style="font-weight: 700">最新评论（含 bot）</div>
+          <div style="font-weight: 800">最新评论（含 bot）</div>
           <div class="muted" id="commentsMeta"></div>
         </div>
         <pre id="commentsPre"></pre>
@@ -269,12 +407,22 @@
 
       <div class="card" id="tableCard" style="display: none">
         <div class="row">
-          <div style="font-weight: 700">Issue Body（含表格）</div>
-          <div class="muted">（原样显示；你也可以点上面的 issue 链接去 GitHub 看渲染效果）</div>
+          <div style="font-weight: 800">表格预览（只渲染 SLEEP_LOG_TABLE 区块）</div>
+          <div class="muted">（更安全：不渲染整段 Issue Body；如需完整渲染请点击上面的 issue 链接）</div>
         </div>
-        <pre id="bodyPre"></pre>
+
+        <div id="tableHtml"></div>
+
+        <details style="margin-top: 12px">
+          <summary class="muted">查看原始 Issue Body（纯文本）</summary>
+          <pre id="bodyPre"></pre>
+        </details>
       </div>
     </main>
+
+    <!-- Render only the SLEEP_LOG_TABLE block -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
 
     <script src="./config.js"></script>
     <script>
@@ -433,7 +581,7 @@
         for (const sec of sections) {
           const list = data?.[sec.key] || [];
           htmlParts.push(`<div style="margin-top: 12px">
-            <div style="font-weight:700">${escapeHtml(sec.title)}</div>
+            <div style="font-weight:800">${escapeHtml(sec.title)}</div>
             ${
               list.length
                 ? `<table class="lb">
@@ -515,6 +663,18 @@
         await refreshIssueViews(issue.number);
       }
 
+      function extractSleepLogTableBlock(issueBody) {
+        const body = String(issueBody || "");
+        const start = "<!-- SLEEP_LOG_TABLE_START -->";
+        const end = "<!-- SLEEP_LOG_TABLE_END -->";
+        const i = body.indexOf(start);
+        const j = body.indexOf(end);
+        if (i >= 0 && j >= 0 && j > i) {
+          return body.slice(i + start.length, j).trim();
+        }
+        return "";
+      }
+
       async function refreshIssueViews(issueNumber) {
         const sid = await ensureSession();
         const data = await api(`/issue-data?session=${encodeURIComponent(sid)}&number=${issueNumber}&_=${Date.now()}`);
@@ -528,7 +688,21 @@
           })
           .join("\n");
 
-        $("bodyPre").textContent = data.issue_body || "";
+        const body = data.issue_body || "";
+        $("bodyPre").textContent = body;
+
+        // Render only the table block, then sanitize.
+        try {
+          marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
+          const md = extractSleepLogTableBlock(body) || "_(No SLEEP_LOG_TABLE block found in issue body.)_";
+          const rawHtml = marked.parse(md);
+          const safeHtml = DOMPurify.sanitize(rawHtml, { ADD_TAGS: ["details", "summary"] });
+          $("tableHtml").innerHTML = safeHtml;
+        } catch (e) {
+          $("tableHtml").innerHTML =
+            `<div class="muted">Table render failed. Showing raw text instead.</div>` +
+            `<pre>${escapeHtml(extractSleepLogTableBlock(body) || "")}</pre>`;
+        }
       }
 
       async function postCommand(cmd) {
@@ -546,7 +720,6 @@
           body: JSON.stringify({ number: issue.number, body: cmd }),
         });
 
-        // wait for bot to update a bit, then refresh
         await sleep(1200);
         await refreshIssueViews(issue.number);
       }
@@ -573,7 +746,6 @@
 
           setHasIssueUI(true);
 
-          // Wait a bit for /rebuild to be processed, then refresh a couple of times.
           await sleep(1200);
           await refreshIssueViews(created.number);
           await sleep(1200);
