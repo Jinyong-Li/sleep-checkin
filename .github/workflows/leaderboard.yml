@@ -3,7 +3,8 @@ name: Leaderboard (Yesterday)
 on:
   schedule:
     # 04:05 (UTC+8) == 20:05 UTC (previous day)
-    - cron: "5 20 * * *"
+    # 09:00 (UTC+8) == 01:00 UTC
+    - cron: "0 1 * * *"
   workflow_dispatch: {}
 
 permissions:
