@@ -1,32 +1,22 @@
 {
-  "date": "2026-01-10",
+  "date": "2026-01-11",
   "cutoff": "04:00 (UTC+8)",
-  "generated_at": "2026-01-11 11:05:52 (UTC+8)",
+  "generated_at": "2026-01-12 11:03:18 (UTC+8)",
   "top_n": 5,
   "counts": {
     "open_sleep_log_issues": 3,
-    "complete_records": 2
+    "complete_records": 1
   },
   "earliest_sleep": [
-    {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-11 00:46",
-      "wake": "2026-01-11 10:07",
-      "duration": "9h21m",
-      "minutes": 561
-    },
     {
       "user": "Jinyong-Li",
       "user_url": "https://github.com/Jinyong-Li",
       "issue_number": 14,
       "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-11 02:29",
-      "wake": "2026-01-11 10:05",
-      "duration": "7h36m",
-      "minutes": 456
+      "sleep": "2026-01-12 01:12",
+      "wake": "2026-01-12 08:25",
+      "duration": "7h13m",
+      "minutes": 433
     }
   ],
   "latest_sleep": [
@@ -35,20 +25,10 @@
       "user_url": "https://github.com/Jinyong-Li",
       "issue_number": 14,
       "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-11 02:29",
-      "wake": "2026-01-11 10:05",
-      "duration": "7h36m",
-      "minutes": 456
-    },
-    {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-11 00:46",
-      "wake": "2026-01-11 10:07",
-      "duration": "9h21m",
-      "minutes": 561
+      "sleep": "2026-01-12 01:12",
+      "wake": "2026-01-12 08:25",
+      "duration": "7h13m",
+      "minutes": 433
     }
   ],
   "earliest_wake": [
@@ -57,64 +37,34 @@
       "user_url": "https://github.com/Jinyong-Li",
       "issue_number": 14,
       "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-11 02:29",
-      "wake": "2026-01-11 10:05",
-      "duration": "7h36m",
-      "minutes": 456
-    },
-    {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-11 00:46",
-      "wake": "2026-01-11 10:07",
-      "duration": "9h21m",
-      "minutes": 561
+      "sleep": "2026-01-12 01:12",
+      "wake": "2026-01-12 08:25",
+      "duration": "7h13m",
+      "minutes": 433
     }
   ],
   "latest_wake": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-11 00:46",
-      "wake": "2026-01-11 10:07",
-      "duration": "9h21m",
-      "minutes": 561
-    },
-    {
       "user": "Jinyong-Li",
       "user_url": "https://github.com/Jinyong-Li",
       "issue_number": 14,
       "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-11 02:29",
-      "wake": "2026-01-11 10:05",
-      "duration": "7h36m",
-      "minutes": 456
+      "sleep": "2026-01-12 01:12",
+      "wake": "2026-01-12 08:25",
+      "duration": "7h13m",
+      "minutes": 433
     }
   ],
   "longest_sleep": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-11 00:46",
-      "wake": "2026-01-11 10:07",
-      "duration": "9h21m",
-      "minutes": 561
-    },
-    {
       "user": "Jinyong-Li",
       "user_url": "https://github.com/Jinyong-Li",
       "issue_number": 14,
       "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-11 02:29",
-      "wake": "2026-01-11 10:05",
-      "duration": "7h36m",
-      "minutes": 456
+      "sleep": "2026-01-12 01:12",
+      "wake": "2026-01-12 08:25",
+      "duration": "7h13m",
+      "minutes": 433
     }
   ],
   "shortest_sleep": [
@@ -123,20 +73,10 @@
       "user_url": "https://github.com/Jinyong-Li",
       "issue_number": 14,
       "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-11 02:29",
-      "wake": "2026-01-11 10:05",
-      "duration": "7h36m",
-      "minutes": 456
-    },
-    {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-11 00:46",
-      "wake": "2026-01-11 10:07",
-      "duration": "9h21m",
-      "minutes": 561
+      "sleep": "2026-01-12 01:12",
+      "wake": "2026-01-12 08:25",
+      "duration": "7h13m",
+      "minutes": 433
     }
   ]
 }
