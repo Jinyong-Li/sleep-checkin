@@ -1,7 +1,7 @@
 {
-  "date": "2026-01-14",
+  "date": "2026-01-15",
   "cutoff": "04:00 (UTC+8)",
-  "generated_at": "2026-01-15 10:55:48 (UTC+8)",
+  "generated_at": "2026-01-16 10:56:56 (UTC+8)",
   "top_n": 5,
   "counts": {
     "open_sleep_log_issues": 3,
@@ -9,74 +9,74 @@
   },
   "earliest_sleep": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-15 00:15",
-      "wake": "2026-01-15 10:14",
-      "duration": "9h59m",
-      "minutes": 599
+      "user": "Jinyong-Li",
+      "user_url": "https://github.com/Jinyong-Li",
+      "issue_number": 14,
+      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
+      "sleep": "2026-01-16 00:47",
+      "wake": "2026-01-16 08:34",
+      "duration": "7h47m",
+      "minutes": 467
     }
   ],
   "latest_sleep": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-15 00:15",
-      "wake": "2026-01-15 10:14",
-      "duration": "9h59m",
-      "minutes": 599
+      "user": "Jinyong-Li",
+      "user_url": "https://github.com/Jinyong-Li",
+      "issue_number": 14,
+      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
+      "sleep": "2026-01-16 00:47",
+      "wake": "2026-01-16 08:34",
+      "duration": "7h47m",
+      "minutes": 467
     }
   ],
   "earliest_wake": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-15 00:15",
-      "wake": "2026-01-15 10:14",
-      "duration": "9h59m",
-      "minutes": 599
+      "user": "Jinyong-Li",
+      "user_url": "https://github.com/Jinyong-Li",
+      "issue_number": 14,
+      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
+      "sleep": "2026-01-16 00:47",
+      "wake": "2026-01-16 08:34",
+      "duration": "7h47m",
+      "minutes": 467
     }
   ],
   "latest_wake": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-15 00:15",
-      "wake": "2026-01-15 10:14",
-      "duration": "9h59m",
-      "minutes": 599
+      "user": "Jinyong-Li",
+      "user_url": "https://github.com/Jinyong-Li",
+      "issue_number": 14,
+      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
+      "sleep": "2026-01-16 00:47",
+      "wake": "2026-01-16 08:34",
+      "duration": "7h47m",
+      "minutes": 467
     }
   ],
   "longest_sleep": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-15 00:15",
-      "wake": "2026-01-15 10:14",
-      "duration": "9h59m",
-      "minutes": 599
+      "user": "Jinyong-Li",
+      "user_url": "https://github.com/Jinyong-Li",
+      "issue_number": 14,
+      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
+      "sleep": "2026-01-16 00:47",
+      "wake": "2026-01-16 08:34",
+      "duration": "7h47m",
+      "minutes": 467
     }
   ],
   "shortest_sleep": [
     {
-      "user": "yrz-bot",
-      "user_url": "https://github.com/yrz-bot",
-      "issue_number": 16,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/16",
-      "sleep": "2026-01-15 00:15",
-      "wake": "2026-01-15 10:14",
-      "duration": "9h59m",
-      "minutes": 599
+      "user": "Jinyong-Li",
+      "user_url": "https://github.com/Jinyong-Li",
+      "issue_number": 14,
+      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
+      "sleep": "2026-01-16 00:47",
+      "wake": "2026-01-16 08:34",
+      "duration": "7h47m",
+      "minutes": 467
     }
   ]
 }
