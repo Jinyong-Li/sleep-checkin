@@ -1,82 +1,16 @@
 {
-  "date": "2026-01-19",
+  "date": "2026-01-20",
   "cutoff": "04:00 (UTC+8)",
-  "generated_at": "2026-01-20 10:58:36 (UTC+8)",
+  "generated_at": "2026-01-21 10:57:42 (UTC+8)",
   "top_n": 5,
   "counts": {
     "open_sleep_log_issues": 3,
-    "complete_records": 1
+    "complete_records": 0
   },
-  "earliest_sleep": [
-    {
-      "user": "Jinyong-Li",
-      "user_url": "https://github.com/Jinyong-Li",
-      "issue_number": 14,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-20 01:11",
-      "wake": "2026-01-20 08:16",
-      "duration": "7h05m",
-      "minutes": 425
-    }
-  ],
-  "latest_sleep": [
-    {
-      "user": "Jinyong-Li",
-      "user_url": "https://github.com/Jinyong-Li",
-      "issue_number": 14,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-20 01:11",
-      "wake": "2026-01-20 08:16",
-      "duration": "7h05m",
-      "minutes": 425
-    }
-  ],
-  "earliest_wake": [
-    {
-      "user": "Jinyong-Li",
-      "user_url": "https://github.com/Jinyong-Li",
-      "issue_number": 14,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-20 01:11",
-      "wake": "2026-01-20 08:16",
-      "duration": "7h05m",
-      "minutes": 425
-    }
-  ],
-  "latest_wake": [
-    {
-      "user": "Jinyong-Li",
-      "user_url": "https://github.com/Jinyong-Li",
-      "issue_number": 14,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-20 01:11",
-      "wake": "2026-01-20 08:16",
-      "duration": "7h05m",
-      "minutes": 425
-    }
-  ],
-  "longest_sleep": [
-    {
-      "user": "Jinyong-Li",
-      "user_url": "https://github.com/Jinyong-Li",
-      "issue_number": 14,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-20 01:11",
-      "wake": "2026-01-20 08:16",
-      "duration": "7h05m",
-      "minutes": 425
-    }
-  ],
-  "shortest_sleep": [
-    {
-      "user": "Jinyong-Li",
-      "user_url": "https://github.com/Jinyong-Li",
-      "issue_number": 14,
-      "issue_url": "https://github.com/Jinyong-Li/sleep-checkin/issues/14",
-      "sleep": "2026-01-20 01:11",
-      "wake": "2026-01-20 08:16",
-      "duration": "7h05m",
-      "minutes": 425
-    }
-  ]
+  "earliest_sleep": [],
+  "latest_sleep": [],
+  "earliest_wake": [],
+  "latest_wake": [],
+  "longest_sleep": [],
+  "shortest_sleep": []
 }
