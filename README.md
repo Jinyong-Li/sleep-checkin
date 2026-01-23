@@ -38,7 +38,7 @@
 ---
 
 <!-- LEADERBOARD_START -->
-## 昨日榜单（2026-01-21）
+## 昨日榜单（2026-01-22）
 > 仅统计 open 的 `sleep-log` issue 用户；只统计完整记录（Sleep/Wake/Duration 都存在）；cutoff=04:00 (UTC+8)。
 - 最早睡：暂无
 - 最晚睡：暂无
