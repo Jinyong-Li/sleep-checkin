@@ -1,7 +1,7 @@
 {
-  "date": "2026-03-11",
+  "date": "2026-03-12",
   "cutoff": "04:00 (UTC+8)",
-  "generated_at": "2026-03-12 11:29:56 (UTC+8)",
+  "generated_at": "2026-03-13 11:26:19 (UTC+8)",
   "top_n": 5,
   "counts": {
     "open_sleep_log_issues": 3,
